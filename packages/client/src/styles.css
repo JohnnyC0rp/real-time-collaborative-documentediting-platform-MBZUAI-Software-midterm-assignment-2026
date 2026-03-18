@@ -1,0 +1,161 @@
+:root {
+  color: #101418;
+  background: linear-gradient(180deg, #f7fafc 0%, #ecf2f8 100%);
+  font-family:
+    "IBM Plex Sans",
+    "Segoe UI",
+    system-ui,
+    sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+}
+
+.app-shell {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 24px 20px 48px;
+}
+
+.app-header {
+  margin-bottom: 20px;
+}
+
+.app-header h1 {
+  margin: 0 0 8px;
+  font-size: 1.7rem;
+}
+
+.app-header p {
+  margin: 0;
+  color: #4b5563;
+}
+
+.panel {
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 20px;
+  border: 1px solid #d7e1ec;
+  box-shadow: 0 8px 24px rgba(16, 24, 40, 0.06);
+}
+
+.create-form,
+.editor-form {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+input,
+textarea {
+  width: 100%;
+  border: 1px solid #c6d3e3;
+  border-radius: 8px;
+  padding: 10px;
+  font: inherit;
+}
+
+textarea {
+  resize: vertical;
+}
+
+.document-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.document-item {
+  border: 1px solid #d7e1ec;
+  border-radius: 10px;
+  padding: 12px;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.document-item h3 {
+  margin: 0 0 4px;
+}
+
+.meta {
+  margin: 0;
+  color: #6b7280;
+  font-size: 0.9rem;
+}
+
+.actions,
+.editor-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.button {
+  border: 1px solid #1557a0;
+  background: #1557a0;
+  color: #ffffff;
+  padding: 8px 12px;
+  border-radius: 8px;
+  text-decoration: none;
+  font: inherit;
+  cursor: pointer;
+}
+
+.button:hover {
+  background: #11457f;
+}
+
+.button:disabled {
+  opacity: 0.65;
+  cursor: default;
+}
+
+.button.danger {
+  border-color: #b93838;
+  background: #b93838;
+}
+
+.button.danger:hover {
+  background: #912929;
+}
+
+.empty-state {
+  color: #4b5563;
+}
+
+.error {
+  color: #b91c1c;
+  margin: 6px 0;
+}
+
+.save-status {
+  color: #075985;
+  font-size: 0.9rem;
+}
+
+.back-link {
+  color: #0a4a8f;
+  text-decoration: none;
+  font-size: 0.95rem;
+}
+
+.back-link:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 720px) {
+  .document-item {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
