@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS users (
 
 CREATE TABLE IF NOT EXISTS documents (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  title TEXT NOT NULL,
+  title TEXT NOT NULL CHECK (char_length(btrim(title)) BETWEEN 1 AND 120),
   owner_id UUID NOT NULL REFERENCES users (id),
   content TEXT NOT NULL DEFAULT '',
   is_confidential BOOLEAN NOT NULL DEFAULT FALSE,
@@ -22,6 +22,9 @@ CREATE TABLE IF NOT EXISTS documents (
 
 CREATE INDEX IF NOT EXISTS idx_documents_owner_id ON documents (owner_id);
 CREATE INDEX IF NOT EXISTS idx_documents_deleted_at ON documents (deleted_at);
+CREATE INDEX IF NOT EXISTS idx_documents_owner_updated_at
+  ON documents (owner_id, updated_at DESC)
+  WHERE deleted_at IS NULL;
 
 CREATE OR REPLACE FUNCTION set_documents_updated_at()
 RETURNS TRIGGER AS $$

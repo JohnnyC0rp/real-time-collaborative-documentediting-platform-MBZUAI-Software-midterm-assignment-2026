@@ -5,6 +5,7 @@ dotenv.config();
 const DEFAULT_PORT = 4000;
 const DEFAULT_DATABASE_URL =
   "postgres://postgres:postgres@localhost:5432/collab_poc";
+const DEFAULT_DEMO_USER_ID = "00000000-0000-0000-0000-000000000001";
 
 function readPort(rawValue: string | undefined): number {
   if (!rawValue) {
@@ -21,5 +22,6 @@ function readPort(rawValue: string | undefined): number {
 
 export const config = {
   port: readPort(process.env.PORT),
-  databaseUrl: process.env.DATABASE_URL ?? DEFAULT_DATABASE_URL
+  databaseUrl: process.env.DATABASE_URL ?? DEFAULT_DATABASE_URL,
+  demoUserId: process.env.DEMO_USER_ID ?? DEFAULT_DEMO_USER_ID
 };

@@ -1,110 +1,79 @@
 # Collaborative Document Editor PoC
 
-This repository contains the Assignment 1 proof-of-concept for AI1220.  
-It demonstrates a minimal but working end-to-end flow:
+This repo contains the current CRUD proof of concept for AI1220. It keeps the scope small on purpose: a Vue client, an Express API, PostgreSQL storage, and one shared TypeScript contract package.
 
-- Vue frontend (`packages/client`) with:
-  - Document List page
-  - Document Editor page
-- Express backend (`packages/server`) with:
-  - `POST /api/documents`
-  - `GET /api/documents`
-  - `GET /api/documents/:id`
-  - `PUT /api/documents/:id`
-  - `DELETE /api/documents/:id`
-- PostgreSQL schema and migration with required `users` and `documents` columns
-- Shared TypeScript contracts (`packages/shared`) imported by both frontend and backend
+## Included
 
-## What This PoC Demonstrates
+- Document list and document editor screens
+- `POST`, `GET`, `PUT`, and `DELETE` document endpoints
+- Shared request and response types in `packages/shared`
+- Seeded demo user support through `.env`
+- Soft-delete support in the database schema
 
-- Frontend-to-backend communication through meaningful API calls.
-- Data contracts that match the architecture-aligned PoC reference:
-  - snake_case document fields (`owner_id`, `created_at`, `updated_at`)
-  - list shape: `{ "documents": [...], "total": N }`
-  - error shape: `{ "error": { "code": "...", "message": "..." } }`
-- Monorepo layout using npm workspaces.
+## Not Included Yet
 
-## What This PoC Intentionally Does Not Implement Yet
+- OAuth or full authentication flow
+- Real-time collaboration
+- AI actions
+- Sharing UI, version history UI, or export flow
 
-- Authentication or OAuth login flow (uses a seeded hardcoded test user).
-- Real-time collaboration (WebSocket/CRDT).
-- AI orchestration, version history UI, sharing/permissions UI.
-
-## Project Structure
+## Project Layout
 
 ```text
 .
 ├── packages
 │   ├── client
-│   │   └── src
-│   │       ├── components
-│   │       ├── services
-│   │       └── views
 │   ├── server
-│   │   ├── migrations
-│   │   └── src
-│   │       ├── middleware
-│   │       ├── models
-│   │       ├── routes
-│   │       └── utils
 │   └── shared
-│       └── src
 ├── docker-compose.yml
 └── .env.example
 ```
 
-## Prerequisites
+## Run Locally
 
-- Node.js 20+
-- npm 10+
-- Docker (recommended for local PostgreSQL)
-
-## Setup and Run
-
-1. Install dependencies:
+1. Install dependencies.
 
 ```bash
 npm install
 ```
 
-2. Create local environment file:
+2. Copy the example environment file.
 
 ```bash
 cp .env.example .env
 ```
 
-3. Start PostgreSQL:
+`DEMO_USER_ID` should match the seeded user in `packages/server/migrations/001_init.sql`.
+
+3. Start PostgreSQL.
 
 ```bash
 docker compose up -d
 ```
 
-4. Run database migration:
+4. Run the migration.
 
 ```bash
 npm run migrate
 ```
 
-5. Start backend API:
+5. Start the backend.
 
 ```bash
 npm run dev:server
 ```
 
-6. In another terminal, start frontend:
+6. Start the frontend in a second terminal.
 
 ```bash
 npm run dev:client
 ```
 
-7. Open:
+Open `http://localhost:5173`. The API runs on `http://localhost:4000`.
 
-- Frontend: `http://localhost:5173`
-- Backend: `http://localhost:4000`
+## API Checks
 
-## Quick API Contract Checks
-
-Create document:
+Create a document:
 
 ```bash
 curl -X POST http://localhost:4000/api/documents \
@@ -118,13 +87,13 @@ List documents:
 curl http://localhost:4000/api/documents
 ```
 
-Get one document:
+Load one document:
 
 ```bash
 curl http://localhost:4000/api/documents/<DOCUMENT_ID>
 ```
 
-Update document:
+Update a document:
 
 ```bash
 curl -X PUT http://localhost:4000/api/documents/<DOCUMENT_ID> \
@@ -132,19 +101,19 @@ curl -X PUT http://localhost:4000/api/documents/<DOCUMENT_ID> \
   -d '{"title":"Updated title","content":"Updated content"}'
 ```
 
-Delete document:
+Delete a document:
 
 ```bash
 curl -X DELETE http://localhost:4000/api/documents/<DOCUMENT_ID>
 ```
 
-Invalid ID contract check:
+Invalid ID check:
 
 ```bash
 curl http://localhost:4000/api/documents/not-a-real-id
 ```
 
-Expected error shape:
+Expected error response:
 
 ```json
 {
@@ -155,15 +124,12 @@ Expected error shape:
 }
 ```
 
-## Type and Build Validation
-
-Run:
+## Validation
 
 ```bash
 npm run check
 ```
 
-## Security Note
+## Notes
 
-Do not commit real credentials, API tokens, or personal secrets.  
-Use `.env.example` as template and keep `.env` local only.
+Keep `.env` local. Do not commit secrets, tokens, or personal credentials.

@@ -4,7 +4,13 @@
 
     <form class="create-form" @submit.prevent="onCreate">
       <label for="title">New document title</label>
-      <input id="title" v-model="newTitle" type="text" maxlength="120" required />
+      <input
+        id="title"
+        v-model="newTitle"
+        type="text"
+        :maxlength="DOCUMENT_TITLE_MAX_LENGTH"
+        required
+      />
       <button class="button" type="submit" :disabled="isSubmitting">Create</button>
     </form>
 
@@ -27,8 +33,9 @@
 </template>
 
 <script setup lang="ts">
-import type { DocumentRecord } from "@collab/shared";
+import { DOCUMENT_TITLE_MAX_LENGTH, type DocumentRecord } from "@collab/shared";
 import { onMounted, ref } from "vue";
+import { useRouter } from "vue-router";
 import DocumentListItem from "../components/DocumentListItem.vue";
 import {
   createDocument,
@@ -36,6 +43,7 @@ import {
   listDocuments
 } from "../services/documentsApi";
 
+const router = useRouter();
 const documents = ref<DocumentRecord[]>([]);
 const newTitle = ref("");
 const errorMessage = ref("");
@@ -68,9 +76,9 @@ async function onCreate(): Promise<void> {
   errorMessage.value = "";
 
   try {
-    await createDocument({ title });
+    const document = await createDocument({ title });
     newTitle.value = "";
-    await loadDocuments();
+    await router.push(`/documents/${document.id}`);
   } catch (error) {
     errorMessage.value =
       error instanceof Error ? error.message : "Failed to create document";
@@ -84,7 +92,7 @@ async function onDelete(id: string): Promise<void> {
 
   try {
     await deleteDocument(id);
-    await loadDocuments();
+    documents.value = documents.value.filter((document) => document.id !== id);
   } catch (error) {
     errorMessage.value =
       error instanceof Error ? error.message : "Failed to delete document";
@@ -92,7 +100,6 @@ async function onDelete(id: string): Promise<void> {
 }
 
 onMounted(() => {
-  // A tiny load function now saves us from future "where did my docs go?" drama.
   void loadDocuments();
 });
 </script>

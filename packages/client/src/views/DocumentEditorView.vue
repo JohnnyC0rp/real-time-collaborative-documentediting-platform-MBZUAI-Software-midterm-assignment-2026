@@ -9,7 +9,13 @@
 
     <form v-else class="editor-form" @submit.prevent="onSave">
       <label for="editor-title">Title</label>
-      <input id="editor-title" v-model="title" type="text" maxlength="120" required />
+      <input
+        id="editor-title"
+        v-model="title"
+        type="text"
+        :maxlength="DOCUMENT_TITLE_MAX_LENGTH"
+        required
+      />
 
       <label for="editor-content">Content</label>
       <textarea
@@ -28,6 +34,7 @@
 </template>
 
 <script setup lang="ts">
+import { DOCUMENT_TITLE_MAX_LENGTH } from "@collab/shared";
 import { computed, onMounted, ref } from "vue";
 import { useRoute, RouterLink } from "vue-router";
 import { getDocument, updateDocument } from "../services/documentsApi";

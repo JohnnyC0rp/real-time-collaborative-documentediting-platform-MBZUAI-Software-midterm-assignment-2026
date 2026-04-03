@@ -45,15 +45,18 @@ export async function listDocumentsByOwner(
   return result.rows.map(toDocumentRecord);
 }
 
-export async function getDocumentById(id: string): Promise<DocumentRecord | null> {
+export async function getDocumentById(
+  id: string,
+  ownerId: string
+): Promise<DocumentRecord | null> {
   const result = await query<DocumentRow>(
     `
       SELECT id, title, owner_id, content, created_at, updated_at
       FROM documents
-      WHERE id = $1 AND deleted_at IS NULL
+      WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL
       LIMIT 1
     `,
-    [id]
+    [id, ownerId]
   );
 
   if (result.rowCount === 0) {
@@ -81,6 +84,7 @@ export async function createDocument(
 
 export async function updateDocumentById(
   id: string,
+  ownerId: string,
   payload: UpdateDocumentRequest
 ): Promise<DocumentRecord | null> {
   const updates: string[] = [];
@@ -97,12 +101,13 @@ export async function updateDocumentById(
   }
 
   values.push(id);
+  values.push(ownerId);
 
   const result = await query<DocumentRow>(
     `
       UPDATE documents
       SET ${updates.join(", ")}
-      WHERE id = $${values.length} AND deleted_at IS NULL
+      WHERE id = $${values.length - 1} AND owner_id = $${values.length} AND deleted_at IS NULL
       RETURNING id, title, owner_id, content, created_at, updated_at
     `,
     values
@@ -115,14 +120,17 @@ export async function updateDocumentById(
   return toDocumentRecord(result.rows[0]);
 }
 
-export async function softDeleteDocumentById(id: string): Promise<boolean> {
+export async function softDeleteDocumentById(
+  id: string,
+  ownerId: string
+): Promise<boolean> {
   const result = await query(
     `
       UPDATE documents
       SET deleted_at = NOW()
-      WHERE id = $1 AND deleted_at IS NULL
+      WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL
     `,
-    [id]
+    [id, ownerId]
   );
 
   return (result.rowCount ?? 0) > 0;

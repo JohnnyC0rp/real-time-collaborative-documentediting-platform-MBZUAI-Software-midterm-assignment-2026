@@ -1,12 +1,13 @@
 import { Router, type Request, type Response } from "express";
 import {
-  TEST_USER_ID,
+  DOCUMENT_TITLE_MAX_LENGTH,
   isUuid,
   type CreateDocumentRequest,
   type DeleteDocumentResponse,
   type ListDocumentsResponse,
   type UpdateDocumentRequest
 } from "@collab/shared";
+import { config } from "../config.js";
 import {
   createDocument,
   getDocumentById,
@@ -31,13 +32,23 @@ function validateTitle(title: unknown): string {
   if (typeof title !== "string" || title.trim().length === 0) {
     throw new AppError(400, "VALIDATION_ERROR", "Title is required");
   }
-  return title.trim();
+
+  const nextTitle = title.trim();
+  if (nextTitle.length > DOCUMENT_TITLE_MAX_LENGTH) {
+    throw new AppError(
+      400,
+      "VALIDATION_ERROR",
+      `Title must be at most ${DOCUMENT_TITLE_MAX_LENGTH} characters`
+    );
+  }
+
+  return nextTitle;
 }
 
 documentsRouter.get(
   "/",
   asyncHandler(async (_request: Request, response: Response<ListDocumentsResponse>) => {
-    const documents = await listDocumentsByOwner(TEST_USER_ID);
+    const documents = await listDocumentsByOwner(config.demoUserId);
     response.json({
       documents,
       total: documents.length
@@ -51,16 +62,15 @@ documentsRouter.post(
     request: Request<unknown, unknown, CreateDocumentRequest>,
     response: Response
   ) => {
-    // We do not trust raw input. The internet has taught us that lesson already.
     const title = validateTitle(request.body?.title);
-    const document = await createDocument(title, TEST_USER_ID);
+    const document = await createDocument(title, config.demoUserId);
     response.status(201).json(document);
   })
 );
 
 documentsRouter.get("/:id", asyncHandler(async (request: Request, response: Response) => {
   const id = readDocumentId(request);
-  const document = await getDocumentById(id);
+  const document = await getDocumentById(id, config.demoUserId);
 
   if (!document) {
     throw new AppError(404, "NOT_FOUND", "Document not found");
@@ -94,7 +104,7 @@ documentsRouter.put(
       );
     }
 
-    const updated = await updateDocumentById(id, {
+    const updated = await updateDocumentById(id, config.demoUserId, {
       title: nextTitle,
       content: nextContent
     });
@@ -114,7 +124,7 @@ documentsRouter.delete(
     response: Response<DeleteDocumentResponse>
   ) => {
     const id = readDocumentId(request);
-    const wasDeleted = await softDeleteDocumentById(id);
+    const wasDeleted = await softDeleteDocumentById(id, config.demoUserId);
 
     if (!wasDeleted) {
       throw new AppError(404, "NOT_FOUND", "Document not found");
