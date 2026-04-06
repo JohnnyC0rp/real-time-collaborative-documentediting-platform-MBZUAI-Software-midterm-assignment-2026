@@ -217,7 +217,10 @@ textarea {
 .document-card-header,
 .document-meta-line,
 .document-actions,
-.share-actions {
+.share-actions,
+.history-actions,
+.preview-meta,
+.preview-header {
   display: flex;
   gap: 10px;
   align-items: center;
@@ -350,9 +353,58 @@ textarea {
   gap: 20px;
 }
 
+.preview-header {
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.preview-pane {
+  display: grid;
+  gap: 14px;
+}
+
+.preview-meta {
+  color: #52606d;
+  font-size: 0.92rem;
+}
+
+.preview-title {
+  margin: 0;
+  font-size: 1.3rem;
+}
+
+.preview-flag,
+.history-flag {
+  margin: 6px 0 0 !important;
+  color: #8a341e !important;
+  font-size: 0.92rem;
+}
+
+.preview-surface {
+  min-height: 260px;
+  border: 1px solid rgba(31, 41, 51, 0.12);
+  border-radius: 20px;
+  padding: 18px;
+  background: rgba(255, 255, 255, 0.95);
+}
+
+.preview-surface h1,
+.preview-surface h2,
+.preview-surface p,
+.preview-surface ul,
+.preview-surface ol,
+.preview-surface pre {
+  margin-top: 0;
+}
+
 .stack-list {
   display: grid;
   gap: 12px;
+}
+
+.list-card-active {
+  border-color: rgba(0, 95, 115, 0.3);
+  box-shadow: inset 0 0 0 1px rgba(0, 95, 115, 0.2);
 }
 
 .ghost-link {

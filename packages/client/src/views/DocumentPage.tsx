@@ -18,6 +18,21 @@ function formatTimestamp(value: string) {
   return new Date(value).toLocaleString();
 }
 
+function describeVersionSource(source: DocumentDetail["versions"][number]["source"]) {
+  switch (source) {
+    case "autosave":
+      return "Autosave";
+    case "manual-update":
+      return "Manual save";
+    case "restore":
+      return "Restore";
+    case "initial":
+      return "Initial version";
+    default:
+      return source;
+  }
+}
+
 export function DocumentPage() {
   const navigate = useNavigate();
   const { documentId = "" } = useParams();
@@ -32,6 +47,7 @@ export function DocumentPage() {
   const [isSharing, setIsSharing] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [restoringVersionId, setRestoringVersionId] = useState<string | null>(null);
+  const [previewVersionId, setPreviewVersionId] = useState<string | null>(null);
   const lastSavedSnapshot = useRef("");
 
   const editor = useEditor({
@@ -59,6 +75,17 @@ export function DocumentPage() {
     if (editor && editor.getHTML() !== nextDocument.content) {
       editor.commands.setContent(nextDocument.content, false);
     }
+
+    setPreviewVersionId((currentPreviewVersionId) => {
+      if (
+        currentPreviewVersionId &&
+        nextDocument.versions.some((version) => version.id === currentPreviewVersionId)
+      ) {
+        return currentPreviewVersionId;
+      }
+
+      return nextDocument.versions[0]?.id ?? null;
+    });
   }
 
   useEffect(() => {
@@ -240,6 +267,24 @@ export function DocumentPage() {
     );
   }
 
+  const versionsById = new Map(document.versions.map((version) => [version.id, version]));
+  const restoredAtBySourceVersionId = new Map<string, string>();
+
+  for (const version of document.versions) {
+    if (version.restored_from_version_id) {
+      restoredAtBySourceVersionId.set(version.restored_from_version_id, version.created_at);
+    }
+  }
+
+  const previewVersion =
+    previewVersionId === null
+      ? null
+      : document.versions.find((version) => version.id === previewVersionId) ?? null;
+
+  const previewSourceVersion = previewVersion?.restored_from_version_id
+    ? versionsById.get(previewVersion.restored_from_version_id) ?? null
+    : null;
+
   return (
     <div className="editor-layout">
       <section className="panel">
@@ -294,6 +339,59 @@ export function DocumentPage() {
       </section>
 
       <aside className="sidebar-stack">
+        <section className="panel">
+          <div className="preview-header">
+            <div>
+              <h2>Version preview</h2>
+              <p className="muted-copy">
+                Preview a historical snapshot here before you decide to restore it.
+              </p>
+            </div>
+            {previewVersion ? (
+              <button
+                className="ghost-link"
+                type="button"
+                onClick={() => setPreviewVersionId(null)}
+              >
+                Clear
+              </button>
+            ) : null}
+          </div>
+
+          {previewVersion ? (
+            <div className="preview-pane">
+              <div className="preview-meta">
+                <strong>{previewVersion.title}</strong>
+                <span>{describeVersionSource(previewVersion.source)}</span>
+                <span>{formatTimestamp(previewVersion.created_at)}</span>
+                <span>By {previewVersion.created_by.username}</span>
+              </div>
+
+              {previewVersion.restored_from_version_id && previewSourceVersion ? (
+                <p className="preview-flag">
+                  Restored from {formatTimestamp(previewSourceVersion.created_at)}
+                </p>
+              ) : null}
+
+              {restoredAtBySourceVersionId.has(previewVersion.id) ? (
+                <p className="preview-flag">
+                  Restored on {formatTimestamp(restoredAtBySourceVersionId.get(previewVersion.id)!)}
+                </p>
+              ) : null}
+
+              <h3 className="preview-title">{previewVersion.title}</h3>
+              <div
+                className="preview-surface"
+                dangerouslySetInnerHTML={{ __html: previewVersion.content }}
+              />
+            </div>
+          ) : (
+            <p className="muted-copy">
+              Pick any version from the history below to inspect it in a separate right-side view.
+            </p>
+          )}
+        </section>
+
         <section className="panel">
           <h2>Sharing</h2>
           {canManageShares ? (
@@ -358,23 +456,48 @@ export function DocumentPage() {
           <h2>Version history</h2>
           <div className="stack-list">
             {document.versions.map((version) => (
-              <article key={version.id} className="list-card">
+              <article
+                key={version.id}
+                className={`list-card${previewVersion?.id === version.id ? " list-card-active" : ""}`}
+              >
                 <div>
-                  <strong>{version.source}</strong>
+                  <strong>{describeVersionSource(version.source)}</strong>
                   <p>
                     {formatTimestamp(version.created_at)} by {version.created_by.username}
                   </p>
+                  {version.restored_from_version_id ? (
+                    <p className="history-flag">
+                      Restored from{" "}
+                      {formatTimestamp(
+                        versionsById.get(version.restored_from_version_id)?.created_at ?? version.created_at
+                      )}
+                    </p>
+                  ) : null}
+                  {restoredAtBySourceVersionId.has(version.id) ? (
+                    <p className="history-flag">
+                      Restored on {formatTimestamp(restoredAtBySourceVersionId.get(version.id)!)}
+                    </p>
+                  ) : null}
                 </div>
-                {canEdit ? (
+                <div className="history-actions">
                   <button
                     className="ghost-link"
-                    disabled={restoringVersionId === version.id}
                     type="button"
-                    onClick={() => void handleRestore(version.id)}
+                    onClick={() => setPreviewVersionId(version.id)}
                   >
-                    {restoringVersionId === version.id ? "Restoring..." : "Restore"}
+                    {previewVersion?.id === version.id ? "Previewing" : "Preview"}
                   </button>
-                ) : null}
+                  {canEdit ? (
+                    <button
+                      className="ghost-link"
+                      disabled={restoringVersionId === version.id}
+                      type="button"
+                      onClick={() => void handleRestore(version.id)}
+                    >
+                      {restoringVersionId === version.id ? "Restoring..." : "Restore"}
+                    </button>
+                  ) : null}
+                </div>
               </article>
             ))}
           </div>
