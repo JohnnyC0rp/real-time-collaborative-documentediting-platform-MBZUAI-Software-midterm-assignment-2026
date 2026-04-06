@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     app_name: str = "Collaborative Document Editor"
     app_origin: str = "http://localhost:5173"
     api_port: int = 8000
-    jwt_secret: str = Field(default="replace-this-secret", min_length=16)
+    jwt_secret: str = Field(default="replace-this-secret-with-32-bytes", min_length=32)
     jwt_algorithm: str = "HS256"
     access_token_ttl_minutes: int = 20
     refresh_token_ttl_days: int = 7

@@ -1,9 +1,13 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, status
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
+from app.errors import AppError
 from app.routers.auth import router as auth_router
 from app.routers.documents import router as documents_router
+from app.store import get_store
 
 settings = get_settings()
 
@@ -23,6 +27,38 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"]
 )
+
+
+@app.on_event("startup")
+def ensure_data_file() -> None:
+    get_store().ensure_initialized()
+
+
+@app.exception_handler(AppError)
+def handle_app_error(_request: Request, exc: AppError) -> JSONResponse:
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "error": {
+                "code": exc.code,
+                "message": exc.message
+            }
+        }
+    )
+
+
+@app.exception_handler(RequestValidationError)
+def handle_validation_error(_request: Request, exc: RequestValidationError) -> JSONResponse:
+    first_error = exc.errors()[0]
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content={
+            "error": {
+                "code": "VALIDATION_ERROR",
+                "message": first_error.get("msg", "Validation failed")
+            }
+        }
+    )
 
 
 @app.get("/health", tags=["system"])
