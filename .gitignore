@@ -3,4 +3,9 @@ dist
 .DS_Store
 .env
 *.log
-tmp/pdfs
+__pycache__
+.pytest_cache
+.ruff_cache
+.venv
+*.pyc
+packages/server/data/*.json

@@ -1,17 +1,18 @@
 {
-  "name": "collab-docs-poc",
+  "name": "collab-docs-core",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "workspaces": [
-    "packages/*"
+    "packages/client",
+    "packages/server",
+    "packages/shared"
   ],
   "scripts": {
     "dev:server": "npm run dev --workspace @collab/server",
     "dev:client": "npm run dev --workspace @collab/client",
-    "migrate": "npm run migrate --workspace @collab/server",
     "check:shared": "npm run check --workspace @collab/shared",
-    "check:server": "npm run check --workspace @collab/server",
     "check:client": "npm run check --workspace @collab/client",
-    "check": "npm run check:shared && npm run check:server && npm run check:client"
+    "check:server": "npm run check --workspace @collab/server",
+    "check": "npm run check:shared && npm run check:client && npm run check:server"
   }
 }

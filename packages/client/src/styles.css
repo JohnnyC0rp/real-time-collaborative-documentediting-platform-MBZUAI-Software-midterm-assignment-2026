@@ -1,11 +1,11 @@
 :root {
-  color: #101418;
-  background: linear-gradient(180deg, #f7fafc 0%, #ecf2f8 100%);
-  font-family:
-    "IBM Plex Sans",
-    "Segoe UI",
-    system-ui,
-    sans-serif;
+  color-scheme: light;
+  font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+  background:
+    radial-gradient(circle at top left, #f9d6c2 0%, transparent 28%),
+    radial-gradient(circle at top right, #d7ebff 0%, transparent 24%),
+    #f5f1ea;
+  color: #1f2933;
 }
 
 * {
@@ -17,145 +17,116 @@ body {
   min-height: 100vh;
 }
 
+a {
+  color: inherit;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+#root {
+  min-height: 100vh;
+}
+
 .app-shell {
-  max-width: 980px;
+  width: min(1120px, calc(100vw - 32px));
   margin: 0 auto;
-  padding: 24px 20px 48px;
+  padding: 32px 0 56px;
 }
 
-.app-header {
-  margin-bottom: 20px;
+.hero {
+  display: grid;
+  gap: 20px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  padding: 28px 32px;
+  border: 1px solid rgba(31, 41, 51, 0.12);
+  border-radius: 28px;
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 20px 60px rgba(31, 41, 51, 0.08);
 }
 
-.app-header h1 {
-  margin: 0 0 8px;
-  font-size: 1.7rem;
-}
-
-.app-header p {
+.hero h1 {
   margin: 0;
-  color: #4b5563;
+  font-size: clamp(2.4rem, 5vw, 4rem);
+  line-height: 0.95;
+}
+
+.eyebrow {
+  margin: 0 0 12px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  color: #b2553a;
+}
+
+.hero-copy {
+  max-width: 56ch;
+  margin: 16px 0 0;
+  line-height: 1.65;
+  color: #52606d;
+}
+
+.hero-nav {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.hero-nav a {
+  padding: 10px 16px;
+  border-radius: 999px;
+  text-decoration: none;
+  background: rgba(31, 41, 51, 0.08);
+}
+
+.hero-nav a.active {
+  background: #1f2933;
+  color: white;
 }
 
 .panel {
-  background: #ffffff;
-  border-radius: 12px;
-  padding: 20px;
-  border: 1px solid #d7e1ec;
-  box-shadow: 0 8px 24px rgba(16, 24, 40, 0.06);
+  margin-top: 24px;
+  padding: 28px 32px;
+  border-radius: 28px;
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid rgba(31, 41, 51, 0.08);
+  box-shadow: 0 18px 50px rgba(31, 41, 51, 0.08);
 }
 
-.create-form,
-.editor-form {
-  display: grid;
-  gap: 10px;
-  margin-bottom: 14px;
+.panel h2 {
+  margin-top: 0;
+  font-size: 1.7rem;
 }
 
-input,
-textarea {
-  width: 100%;
-  border: 1px solid #c6d3e3;
-  border-radius: 8px;
-  padding: 10px;
-  font: inherit;
+.panel p {
+  margin-bottom: 0;
+  line-height: 1.7;
+  color: #52606d;
 }
 
-textarea {
-  resize: vertical;
-}
+@media (max-width: 760px) {
+  .app-shell {
+    width: min(100vw - 24px, 1120px);
+    padding-top: 20px;
+  }
 
-.document-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 10px;
-}
+  .hero {
+    grid-template-columns: 1fr;
+    padding: 24px;
+  }
 
-.document-item {
-  border: 1px solid #d7e1ec;
-  border-radius: 10px;
-  padding: 12px;
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  align-items: center;
-}
+  .hero-nav {
+    justify-content: flex-start;
+  }
 
-.document-item h3 {
-  margin: 0 0 4px;
-}
-
-.meta {
-  margin: 0;
-  color: #6b7280;
-  font-size: 0.9rem;
-}
-
-.actions,
-.editor-actions {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
-.button {
-  border: 1px solid #1557a0;
-  background: #1557a0;
-  color: #ffffff;
-  padding: 8px 12px;
-  border-radius: 8px;
-  text-decoration: none;
-  font: inherit;
-  cursor: pointer;
-}
-
-.button:hover {
-  background: #11457f;
-}
-
-.button:disabled {
-  opacity: 0.65;
-  cursor: default;
-}
-
-.button.danger {
-  border-color: #b93838;
-  background: #b93838;
-}
-
-.button.danger:hover {
-  background: #912929;
-}
-
-.empty-state {
-  color: #4b5563;
-}
-
-.error {
-  color: #b91c1c;
-  margin: 6px 0;
-}
-
-.save-status {
-  color: #075985;
-  font-size: 0.9rem;
-}
-
-.back-link {
-  color: #0a4a8f;
-  text-decoration: none;
-  font-size: 0.95rem;
-}
-
-.back-link:hover {
-  text-decoration: underline;
-}
-
-@media (max-width: 720px) {
-  .document-item {
-    flex-direction: column;
-    align-items: flex-start;
+  .panel {
+    padding: 24px;
   }
 }

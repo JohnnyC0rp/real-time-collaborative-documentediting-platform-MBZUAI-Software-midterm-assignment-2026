@@ -1,27 +1,10 @@
 {
   "name": "@collab/server",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
-  "type": "module",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
-    "start": "tsx src/index.ts",
-    "migrate": "tsx src/scripts/runMigrations.ts",
-    "check": "tsc --noEmit"
-  },
-  "dependencies": {
-    "@collab/shared": "*",
-    "cors": "^2.8.5",
-    "dotenv": "^16.4.5",
-    "express": "^4.21.1",
-    "pg": "^8.13.1"
-  },
-  "devDependencies": {
-    "@types/cors": "^2.8.17",
-    "@types/express": "^4.17.21",
-    "@types/node": "^22.9.0",
-    "@types/pg": "^8.11.10",
-    "tsx": "^4.19.1",
-    "typescript": "^5.6.3"
+    "dev": "uv run uvicorn app.main:app --reload --host 127.0.0.1 --port 8000",
+    "start": "uv run uvicorn app.main:app --host 0.0.0.0 --port 8000",
+    "check": "uv run python -m compileall app"
   }
 }
