@@ -9,6 +9,8 @@
     "check": "tsc --noEmit && vite build"
   },
   "dependencies": {
+    "@tiptap/react": "^2.14.0",
+    "@tiptap/starter-kit": "^2.14.0",
     "@collab/shared": "*",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",

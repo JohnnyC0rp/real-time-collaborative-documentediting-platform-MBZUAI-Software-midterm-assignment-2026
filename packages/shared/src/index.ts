@@ -89,6 +89,7 @@ export interface CreateDocumentRequest {
 export interface UpdateDocumentRequest {
   title?: string;
   content?: string;
+  save_source?: "autosave" | "manual-update";
 }
 
 export interface ShareDocumentRequest {

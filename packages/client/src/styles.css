@@ -99,6 +99,15 @@ textarea {
   color: white;
 }
 
+.danger-button {
+  border: 0;
+  border-radius: 999px;
+  background: #a61b1b;
+  color: white;
+  padding: 12px 18px;
+  cursor: pointer;
+}
+
 .session-banner {
   display: flex;
   gap: 10px;
@@ -164,6 +173,81 @@ textarea {
   flex-wrap: wrap;
 }
 
+.create-document-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.create-document-row input,
+.field input,
+.field select {
+  width: 100%;
+  border: 1px solid rgba(31, 41, 51, 0.14);
+  border-radius: 16px;
+  padding: 13px 14px;
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.document-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.document-card,
+.list-card {
+  border: 1px solid rgba(31, 41, 51, 0.1);
+  border-radius: 20px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.document-card h3,
+.list-card strong {
+  margin: 0;
+}
+
+.document-card p,
+.list-card p {
+  margin: 8px 0;
+}
+
+.document-card-header,
+.document-meta-line,
+.document-actions,
+.share-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.role-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.role-owner {
+  background: rgba(178, 85, 58, 0.16);
+  color: #8a341e;
+}
+
+.role-editor {
+  background: rgba(0, 104, 128, 0.16);
+  color: #005f73;
+}
+
+.role-viewer {
+  background: rgba(31, 41, 51, 0.12);
+  color: #364152;
+}
+
 .primary-button {
   border: 0;
   border-radius: 999px;
@@ -188,6 +272,97 @@ textarea {
   color: #a61b1b;
 }
 
+.editor-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(280px, 0.95fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.document-header {
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 16px;
+}
+
+.document-title-input {
+  width: 100%;
+  border: 0;
+  padding: 0;
+  margin-top: 8px;
+  background: transparent;
+  font-size: clamp(1.8rem, 4vw, 2.6rem);
+  font-weight: 700;
+}
+
+.save-chip {
+  margin: 0 0 14px !important;
+  display: inline-flex;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(0, 95, 115, 0.12);
+  color: #005f73 !important;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.toolbar-button {
+  border: 1px solid rgba(31, 41, 51, 0.14);
+  background: white;
+  border-radius: 999px;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+.toolbar-button.active {
+  border-color: #1f2933;
+  background: rgba(31, 41, 51, 0.08);
+}
+
+.editor-surface {
+  min-height: 420px;
+  border: 1px solid rgba(31, 41, 51, 0.12);
+  border-radius: 24px;
+  padding: 18px;
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.editor-surface .ProseMirror {
+  min-height: 380px;
+  outline: none;
+}
+
+.editor-surface .ProseMirror h1,
+.editor-surface .ProseMirror h2,
+.editor-surface .ProseMirror p {
+  margin-top: 0;
+}
+
+.sidebar-stack {
+  display: grid;
+  gap: 20px;
+}
+
+.stack-list {
+  display: grid;
+  gap: 12px;
+}
+
+.ghost-link {
+  border: 0;
+  background: transparent;
+  color: #b2553a;
+  cursor: pointer;
+  padding: 0;
+}
+
 @media (max-width: 760px) {
   .app-shell {
     width: min(100vw - 24px, 1120px);
@@ -205,6 +380,13 @@ textarea {
 
   .session-banner {
     align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .create-document-row,
+  .editor-layout,
+  .document-header {
+    grid-template-columns: 1fr;
     flex-direction: column;
   }
 

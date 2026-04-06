@@ -1,169 +1,97 @@
-# Collaborative Document Editor PoC
+# Collaborative Document Editor
 
-This repository contains the Assignment 1 proof-of-concept for AI1220.  
-It demonstrates a minimal but working end-to-end flow:
+This repository contains the core application for the AI1220 collaborative
+document editor assignment. The application uses a React frontend, a FastAPI
+backend, and shared TypeScript contracts for the browser-facing data model.
 
-- Vue frontend (`packages/client`) with:
-  - Document List page
-  - Document Editor page
-- Express backend (`packages/server`) with:
-  - `POST /api/documents`
-  - `GET /api/documents`
-  - `GET /api/documents/:id`
-  - `PUT /api/documents/:id`
-  - `DELETE /api/documents/:id`
-- PostgreSQL schema and migration with required `users` and `documents` columns
-- Shared TypeScript contracts (`packages/shared`) imported by both frontend and backend
+## What the application provides
 
-## What This PoC Demonstrates
+- Secure registration and login with bcrypt-hashed passwords.
+- Short-lived JWT access tokens with refresh-cookie based silent
+  re-authentication.
+- Protected document routes in the frontend and server-side access checks in the
+  backend.
+- Document CRUD with ownership metadata and a dashboard that lists every
+  document the signed-in user can access.
+- Rich-text editing with headings, bold, italic, ordered lists, bullet lists,
+  and code blocks.
+- Auto-save with visible status feedback.
+- Share management with `owner`, `editor`, and `viewer` roles.
+- Version history with one-click restore.
 
-- Frontend-to-backend communication through meaningful API calls.
-- Data contracts that match the architecture-aligned PoC reference:
-  - snake_case document fields (`owner_id`, `created_at`, `updated_at`)
-  - list shape: `{ "documents": [...], "total": N }`
-  - error shape: `{ "error": { "code": "...", "message": "..." } }`
-- Monorepo layout using npm workspaces.
+## Stack
 
-## What This PoC Intentionally Does Not Implement Yet
+- Frontend: React, React Router, Vite, Tiptap
+- Backend: FastAPI, PyJWT, pwdlib
+- Persistence: JSON file storage inside `packages/server/data`
 
-- Authentication or OAuth login flow (uses a seeded hardcoded test user).
-- Real-time collaboration (WebSocket/CRDT).
-- AI orchestration, version history UI, sharing/permissions UI.
-
-## Project Structure
+## Repository layout
 
 ```text
 .
+├── docs
+│   └── original-instructions
 ├── packages
 │   ├── client
 │   │   └── src
 │   │       ├── components
-│   │       ├── services
+│   │       ├── context
+│   │       ├── lib
 │   │       └── views
 │   ├── server
-│   │   ├── migrations
-│   │   └── src
-│   │       ├── middleware
-│   │       ├── models
-│   │       ├── routes
-│   │       └── utils
+│   │   ├── app
+│   │   │   └── routers
+│   │   └── data
 │   └── shared
 │       └── src
-├── docker-compose.yml
-└── .env.example
+├── .env.example
+└── package.json
 ```
 
-## Prerequisites
+## Local setup
 
-- Node.js 20+
-- npm 10+
-- Docker (recommended for local PostgreSQL)
-
-## Setup and Run
-
-1. Install dependencies:
+1. Install JavaScript dependencies:
 
 ```bash
 npm install
 ```
 
-2. Create local environment file:
+2. Create a local environment file:
 
 ```bash
 cp .env.example .env
 ```
 
-3. Start PostgreSQL:
-
-```bash
-docker compose up -d
-```
-
-4. Run database migration:
-
-```bash
-npm run migrate
-```
-
-5. Start backend API:
+3. Start the FastAPI backend:
 
 ```bash
 npm run dev:server
 ```
 
-6. In another terminal, start frontend:
+4. In another terminal, start the React client:
 
 ```bash
 npm run dev:client
 ```
 
-7. Open:
+5. Open the application at [http://localhost:5173](http://localhost:5173).
 
-- Frontend: `http://localhost:5173`
-- Backend: `http://localhost:4000`
+The backend listens on `http://localhost:8000`, and FastAPI serves interactive
+API documentation at `http://localhost:8000/docs`.
 
-## Quick API Contract Checks
+## Validation
 
-Create document:
-
-```bash
-curl -X POST http://localhost:4000/api/documents \
-  -H "Content-Type: application/json" \
-  -d '{"title":"PoC demo doc"}'
-```
-
-List documents:
-
-```bash
-curl http://localhost:4000/api/documents
-```
-
-Get one document:
-
-```bash
-curl http://localhost:4000/api/documents/<DOCUMENT_ID>
-```
-
-Update document:
-
-```bash
-curl -X PUT http://localhost:4000/api/documents/<DOCUMENT_ID> \
-  -H "Content-Type: application/json" \
-  -d '{"title":"Updated title","content":"Updated content"}'
-```
-
-Delete document:
-
-```bash
-curl -X DELETE http://localhost:4000/api/documents/<DOCUMENT_ID>
-```
-
-Invalid ID contract check:
-
-```bash
-curl http://localhost:4000/api/documents/not-a-real-id
-```
-
-Expected error shape:
-
-```json
-{
-  "error": {
-    "code": "NOT_FOUND",
-    "message": "Document not found"
-  }
-}
-```
-
-## Type and Build Validation
-
-Run:
+Run the monorepo verification command:
 
 ```bash
 npm run check
 ```
 
-## Security Note
+This checks the shared TypeScript contracts, builds the React frontend, and
+compiles the FastAPI backend package.
 
-Do not commit real credentials, API tokens, or personal secrets.  
-Use `.env.example` as template and keep `.env` local only.
+## Security note
+
+Do not commit real credentials, API keys, or personal secrets. Keep `.env`
+local, use `.env.example` as the placeholder template, and rotate any secret if
+it was ever exposed by mistake.
