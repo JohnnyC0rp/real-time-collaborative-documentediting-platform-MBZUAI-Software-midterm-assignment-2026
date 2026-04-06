@@ -1,10 +1,15 @@
+import { useAuth } from "../context/AuthContext";
+
 export function DashboardPage() {
+  const auth = useAuth();
+
   return (
     <section className="panel">
-      <h2>Dashboard scaffold</h2>
+      <h2>Dashboard</h2>
       <p>
-        Document listing, sharing chips, and ownership metadata land in the
-        next frontend commit.
+        Signed in as <strong>{auth.user?.username}</strong>. The next frontend
+        commit fills this page with document creation, role badges, and sharing
+        metadata.
       </p>
     </section>
   );
