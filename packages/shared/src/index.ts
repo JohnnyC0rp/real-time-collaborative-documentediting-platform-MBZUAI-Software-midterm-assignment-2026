@@ -61,10 +61,44 @@ export interface DocumentVersion {
   restored_from_version_id: string | null;
 }
 
+export type AiFeature = "rewrite" | "summarize" | "fix_grammar";
+
+export type AiTone = "clear" | "formal" | "friendly";
+
+export type AiLength = "short" | "medium" | "long";
+
+export type AiSelectionMode = "selection" | "document_excerpt";
+
+export type AiInteractionStatus =
+  | "streaming"
+  | "completed"
+  | "accepted"
+  | "rejected"
+  | "canceled"
+  | "error";
+
+export interface DocumentAiInteraction {
+  id: string;
+  feature: AiFeature;
+  requested_at: string;
+  requested_by: Pick<UserProfile, "id" | "username" | "email">;
+  selection_mode: AiSelectionMode;
+  tone: AiTone | null;
+  output_length: AiLength | null;
+  original_text: string;
+  prompt_text: string;
+  model: string;
+  response_text: string;
+  status: AiInteractionStatus;
+  error_message: string | null;
+  decided_at: string | null;
+}
+
 export interface DocumentDetail extends DocumentSummary {
   content: string;
   shares: DocumentShare[];
   versions: DocumentVersion[];
+  ai_history: DocumentAiInteraction[];
 }
 
 export interface DocumentsResponse {
@@ -103,6 +137,19 @@ export interface UpdateShareRequest {
 
 export interface RestoreVersionRequest {
   version_id: string;
+}
+
+export interface GenerateAiSuggestionRequest {
+  feature: AiFeature;
+  document_content: string;
+  selected_text?: string | null;
+  tone?: AiTone | null;
+  output_length?: AiLength | null;
+  base_updated_at: string;
+}
+
+export interface UpdateAiInteractionStatusRequest {
+  status: Extract<AiInteractionStatus, "accepted" | "rejected">;
 }
 
 export interface SuccessResponse {
