@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.errors import AppError
+from app.routers.ai import router as ai_router
 from app.routers.auth import router as auth_router
 from app.routers.documents import router as documents_router
 from app.store import get_store
@@ -13,10 +14,7 @@ settings = get_settings()
 
 app = FastAPI(
     title=settings.app_name,
-    description=(
-        "Assignment 2 core application backend. Real-time collaboration and AI "
-        "assistant endpoints arrive after the document core is stable."
-    ),
+    description="Collaborative document editor backend with auth, document management, and writing-assistant routes.",
     version="0.2.0"
 )
 
@@ -72,3 +70,4 @@ def healthcheck() -> dict[str, str]:
 
 app.include_router(auth_router)
 app.include_router(documents_router)
+app.include_router(ai_router)
