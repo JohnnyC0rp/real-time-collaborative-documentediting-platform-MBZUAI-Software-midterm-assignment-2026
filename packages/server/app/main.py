@@ -7,6 +7,7 @@ from app.config import get_settings
 from app.errors import AppError
 from app.routers.ai import router as ai_router
 from app.routers.auth import router as auth_router
+from app.routers.collaboration import router as collaboration_router
 from app.routers.documents import router as documents_router
 from app.store import get_store
 
@@ -71,3 +72,4 @@ def healthcheck() -> dict[str, str]:
 app.include_router(auth_router)
 app.include_router(documents_router)
 app.include_router(ai_router)
+app.include_router(collaboration_router)

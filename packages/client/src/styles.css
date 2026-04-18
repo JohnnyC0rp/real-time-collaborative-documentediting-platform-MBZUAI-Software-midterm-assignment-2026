@@ -596,6 +596,22 @@ textarea {
   color: #005f73;
 }
 
+.status-connecting,
+.status-reconnecting {
+  background: rgba(178, 85, 58, 0.14);
+  color: #8a341e;
+}
+
+.status-connected {
+  background: rgba(30, 122, 77, 0.14);
+  color: #166534;
+}
+
+.status-disconnected {
+  background: rgba(31, 41, 51, 0.1);
+  color: #364152;
+}
+
 .status-completed,
 .status-accepted {
   background: rgba(30, 122, 77, 0.14);

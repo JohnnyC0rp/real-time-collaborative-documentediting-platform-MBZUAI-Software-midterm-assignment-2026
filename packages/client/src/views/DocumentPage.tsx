@@ -2,6 +2,9 @@ import type {
   AiActionResult,
   AiActionType,
   AiInteractionRecord,
+  CollaborationConnectionState,
+  CollaborationDocumentState,
+  CollaborationPresence,
   DocumentDetail,
   SubmitAiActionRequest
 } from "@collab/shared";
@@ -9,9 +12,12 @@ import { EditorContent, useEditor, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { CollaborationPanel } from "../components/CollaborationPanel";
 import { RichTextToolbar } from "../components/RichTextToolbar";
 import { RoleBadge } from "../components/RoleBadge";
+import { useAuth } from "../context/AuthContext";
 import { listAiHistory, resolveAiInteraction, streamAiAction } from "../lib/ai";
+import { DocumentCollaborationSession } from "../lib/collaboration";
 import {
   deleteDocument,
   getDocument,
@@ -217,11 +223,34 @@ function getCurrentReviewText(editor: Editor, review: AiActionResult | null) {
   return plainText.slice(start, end).trim();
 }
 
+function documentSnapshot(title: string, content: string) {
+  return JSON.stringify({
+    title: title.trim(),
+    content
+  });
+}
+
+function mergeLatestVersion(
+  versions: DocumentDetail["versions"],
+  latestVersion: CollaborationDocumentState["latest_version"]
+) {
+  if (!latestVersion) {
+    return versions;
+  }
+
+  if (versions.some((version) => version.id === latestVersion.id)) {
+    return versions;
+  }
+
+  return [latestVersion, ...versions];
+}
+
 function isAbortError(error: unknown) {
   return error instanceof Error && error.name === "AbortError";
 }
 
 export function DocumentPage() {
+  const auth = useAuth();
   const navigate = useNavigate();
   const { documentId = "" } = useParams();
   const [document, setDocument] = useState<DocumentDetail | null>(null);
@@ -254,9 +283,17 @@ export function DocumentPage() {
   const [aiHistoryActionFilter, setAiHistoryActionFilter] = useState("all");
   const [aiHistoryResolutionFilter, setAiHistoryResolutionFilter] = useState("all");
   const [aiHistoryRefreshToken, setAiHistoryRefreshToken] = useState(0);
+  const [collaborationState, setCollaborationState] = useState<CollaborationConnectionState>("disconnected");
+  const [collaborationPresence, setCollaborationPresence] = useState<CollaborationPresence[]>([]);
   const lastSavedSnapshot = useRef("");
+  const lastCollaborationSnapshot = useRef<string | null>(null);
   const aiAbortControllerRef = useRef<AbortController | null>(null);
   const aiStreamTextRef = useRef("");
+  const collaborationSessionRef = useRef<DocumentCollaborationSession | null>(null);
+  const currentTitleRef = useRef(title);
+  const currentContentRef = useRef(content);
+  const canEditRef = useRef(false);
+  const editorRef = useRef<Editor | null>(null);
 
   const editor = useEditor({
     extensions: [StarterKit],
@@ -281,15 +318,37 @@ export function DocumentPage() {
     .join("\n\n")
     .trim();
   const currentReviewText = editor ? getCurrentReviewText(editor, aiReview) : "";
+  const currentUserId = auth.user?.id ?? null;
+
+  function applyCollaborationDocumentState(nextState: CollaborationDocumentState, saveMessage: string) {
+    setDocument((currentDocument) =>
+      currentDocument
+        ? {
+            ...currentDocument,
+            title: nextState.title,
+            content: nextState.content,
+            updated_at: nextState.updated_at,
+            versions: mergeLatestVersion(currentDocument.versions, nextState.latest_version)
+          }
+        : currentDocument
+    );
+    setTitle(nextState.title);
+    setContent(nextState.content);
+    lastSavedSnapshot.current = documentSnapshot(nextState.title, nextState.content);
+    lastCollaborationSnapshot.current = lastSavedSnapshot.current;
+    setSaveStatus(saveMessage);
+    const liveEditor = editorRef.current;
+    if (liveEditor && liveEditor.getHTML() !== nextState.content) {
+      liveEditor.commands.setContent(nextState.content, false);
+    }
+  }
 
   function applyDocument(nextDocument: DocumentDetail) {
     setDocument(nextDocument);
     setTitle(nextDocument.title);
     setContent(nextDocument.content);
-    lastSavedSnapshot.current = JSON.stringify({
-      title: nextDocument.title,
-      content: nextDocument.content
-    });
+    lastSavedSnapshot.current = documentSnapshot(nextDocument.title, nextDocument.content);
+    lastCollaborationSnapshot.current = lastSavedSnapshot.current;
     setSaveStatus(`Saved at ${formatTimestamp(nextDocument.updated_at)}`);
     if (editor && editor.getHTML() !== nextDocument.content) {
       editor.commands.setContent(nextDocument.content, false);
@@ -307,6 +366,13 @@ export function DocumentPage() {
       return nextDocument.versions[0]?.id ?? null;
     });
   }
+
+  useEffect(() => {
+    currentTitleRef.current = title;
+    currentContentRef.current = content;
+    canEditRef.current = canEdit;
+    editorRef.current = editor;
+  }, [canEdit, content, editor, title]);
 
   useEffect(() => {
     let isMounted = true;
@@ -357,6 +423,99 @@ export function DocumentPage() {
   }, [canEdit, document?.id, editor]);
 
   useEffect(() => {
+    if (!document || !auth.accessToken) {
+      setCollaborationPresence([]);
+      setCollaborationState("disconnected");
+      collaborationSessionRef.current?.close();
+      collaborationSessionRef.current = null;
+      return;
+    }
+
+    const session = new DocumentCollaborationSession(document.id, auth.accessToken, {
+      onAck: (event) => {
+        lastSavedSnapshot.current = documentSnapshot(event.document.title, event.document.content);
+        lastCollaborationSnapshot.current = lastSavedSnapshot.current;
+        setDocument((currentDocument) =>
+          currentDocument
+            ? {
+                ...currentDocument,
+                title: event.document.title,
+                content: event.document.content,
+                updated_at: event.document.updated_at,
+                versions: mergeLatestVersion(currentDocument.versions, event.document.latest_version)
+              }
+            : currentDocument
+        );
+        setTitle(event.document.title);
+        setContent(event.document.content);
+        setSaveStatus(`Live synced at ${formatTimestamp(event.document.updated_at)}`);
+      },
+      onConnectionStateChange: setCollaborationState,
+      onError: (message) => {
+        setErrorMessage(message);
+      },
+      onPresence: (event) => {
+        setCollaborationPresence(event.presence);
+      },
+      onRemoteUpdate: (event) => {
+        const liveEditor = editorRef.current;
+        const currentSnapshot = documentSnapshot(
+          currentTitleRef.current,
+          liveEditor?.getHTML() ?? currentContentRef.current
+        );
+        const hasUnsyncedLocalEdits =
+          canEditRef.current &&
+          lastCollaborationSnapshot.current !== null &&
+          currentSnapshot !== lastCollaborationSnapshot.current;
+
+        if (hasUnsyncedLocalEdits) {
+          setSaveStatus(
+            `Remote changes from ${event.updated_by.username} arrived while you were editing. Your next sync will use the current editor state.`
+          );
+          return;
+        }
+
+        applyCollaborationDocumentState(
+          event.document,
+          `Live update from ${event.updated_by.username} at ${formatTimestamp(event.document.updated_at)}`
+        );
+      },
+      onSnapshot: (event) => {
+        setCollaborationPresence(event.presence);
+        const liveEditor = editorRef.current;
+        const currentSnapshot = documentSnapshot(
+          currentTitleRef.current,
+          liveEditor?.getHTML() ?? currentContentRef.current
+        );
+        const hasUnsyncedLocalEdits =
+          canEditRef.current &&
+          lastCollaborationSnapshot.current !== null &&
+          currentSnapshot !== lastCollaborationSnapshot.current;
+
+        if (hasUnsyncedLocalEdits) {
+          setSaveStatus("Reconnected. Keeping local edits and syncing them now.");
+          return;
+        }
+
+        applyCollaborationDocumentState(
+          event.document,
+          `Live collaboration connected at ${formatTimestamp(event.document.updated_at)}`
+        );
+      }
+    });
+
+    collaborationSessionRef.current = session;
+    session.connect();
+
+    return () => {
+      if (collaborationSessionRef.current === session) {
+        collaborationSessionRef.current = null;
+      }
+      session.close();
+    };
+  }, [auth.accessToken, document?.id]);
+
+  useEffect(() => {
     if (!document || !canViewAiHistory) {
       setAiHistory([]);
       return;
@@ -404,10 +563,7 @@ export function DocumentPage() {
       return;
     }
 
-    const snapshot = JSON.stringify({
-      title: title.trim(),
-      content
-    });
+    const snapshot = documentSnapshot(title, content);
 
     if (snapshot === lastSavedSnapshot.current) {
       return;
@@ -423,6 +579,34 @@ export function DocumentPage() {
       window.clearTimeout(timeoutId);
     };
   }, [canEdit, content, document?.id, title]);
+
+  useEffect(() => {
+    if (!document || !canEdit || !collaborationSessionRef.current) {
+      return;
+    }
+
+    const snapshot = documentSnapshot(title, content);
+    if (snapshot === lastCollaborationSnapshot.current) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      collaborationSessionRef.current?.sendUpdate({
+        title: title.trim(),
+        content
+      });
+      collaborationSessionRef.current?.sendActivity();
+      setSaveStatus(
+        collaborationState === "connected"
+          ? "Live syncing..."
+          : "Offline. Local edits will sync when collaboration reconnects."
+      );
+    }, 250);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [canEdit, collaborationState, content, document?.id, title]);
 
   useEffect(() => {
     if (!aiReview) {
@@ -1042,6 +1226,12 @@ export function DocumentPage() {
       </section>
 
       <aside className="sidebar-stack">
+        <CollaborationPanel
+          connectionState={collaborationState}
+          currentUserId={currentUserId}
+          presence={collaborationPresence}
+        />
+
         <section className="panel">
           <div className="preview-header">
             <div>
