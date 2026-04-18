@@ -1,15 +1,20 @@
 import json
 import secrets
+from copy import deepcopy
 from functools import lru_cache
 from pathlib import Path
 from threading import Lock
 from typing import Any, Callable, TypeVar
-from copy import deepcopy
 from uuid import uuid4
 
 from app.config import get_settings
+from app.security import hash_password, utc_now, verify_password
 
 StoreMutationResult = TypeVar("StoreMutationResult")
+
+DEFAULT_TEST_USERNAME = "test"
+DEFAULT_TEST_PASSWORD = "12345678"
+DEFAULT_TEST_EMAIL = "test@example.com"
 
 
 class StoreConflictError(ValueError):
@@ -25,32 +30,96 @@ class JsonStore:
         self._data_file.parent.mkdir(parents=True, exist_ok=True)
         if not self._data_file.exists() or self._data_file.stat().st_size == 0:
             self._write_state(self._empty_state())
+            return
+
+        with self._data_file.open("r", encoding="utf-8") as handle:
+            state = json.load(handle)
+
+        if self._apply_state_defaults(state):
+            self._write_state(state)
 
     def _empty_state(self) -> dict[str, list[dict[str, Any]]]:
-        return {
+        state = {
             "users": [],
             "documents": [],
             "refresh_sessions": [],
             "ai_interactions": [],
             "guest_identities": []
         }
+        self._apply_state_defaults(state)
+        return state
+
+    def _apply_state_defaults(self, state: dict[str, list[dict[str, Any]]]) -> bool:
+        did_change = False
+
+        for key in ("users", "documents", "refresh_sessions", "ai_interactions", "guest_identities"):
+            if key not in state:
+                state[key] = []
+                did_change = True
+
+        for user in state["users"]:
+            if "is_guest" not in user:
+                user["is_guest"] = False
+                did_change = True
+
+        for document in state["documents"]:
+            if "shares" not in document:
+                document["shares"] = []
+                did_change = True
+            if "share_links" not in document:
+                document["share_links"] = []
+                did_change = True
+            if "versions" not in document:
+                document["versions"] = []
+                did_change = True
+
+        return self._ensure_default_test_user(state) or did_change
+
+    def _ensure_default_test_user(self, state: dict[str, list[dict[str, Any]]]) -> bool:
+        for user in state["users"]:
+            if user.get("is_guest"):
+                continue
+            if user["username"].casefold() != DEFAULT_TEST_USERNAME:
+                continue
+
+            did_change = False
+            password_hash = str(user.get("password_hash", ""))
+            if not password_hash or not verify_password(DEFAULT_TEST_PASSWORD, password_hash):
+                user["password_hash"] = hash_password(DEFAULT_TEST_PASSWORD)
+                did_change = True
+
+            return did_change
+
+        existing_emails = {
+            user["email"].casefold()
+            for user in state["users"]
+            if not user.get("is_guest")
+        }
+        test_email = DEFAULT_TEST_EMAIL
+        email_suffix = 1
+        while test_email.casefold() in existing_emails:
+            test_email = f"test+seed{email_suffix}@example.com"
+            email_suffix += 1
+
+        state["users"].append(
+            {
+                "id": str(uuid4()),
+                "username": DEFAULT_TEST_USERNAME,
+                "email": test_email,
+                "password_hash": hash_password(DEFAULT_TEST_PASSWORD),
+                "created_at": utc_now().isoformat(),
+                "is_guest": False
+            }
+        )
+        # Keep one predictable local account around so demo logins do not require archaeology.
+        return True
 
     def _read_state(self) -> dict[str, list[dict[str, Any]]]:
         self.ensure_initialized()
         with self._data_file.open("r", encoding="utf-8") as handle:
             state = json.load(handle)
 
-        state.setdefault("users", [])
-        state.setdefault("documents", [])
-        state.setdefault("refresh_sessions", [])
-        state.setdefault("ai_interactions", [])
-        state.setdefault("guest_identities", [])
-        for user in state["users"]:
-            user.setdefault("is_guest", False)
-        for document in state["documents"]:
-            document.setdefault("shares", [])
-            document.setdefault("share_links", [])
-            document.setdefault("versions", [])
+        self._apply_state_defaults(state)
         return state
 
     def _write_state(self, state: dict[str, list[dict[str, Any]]]) -> None:

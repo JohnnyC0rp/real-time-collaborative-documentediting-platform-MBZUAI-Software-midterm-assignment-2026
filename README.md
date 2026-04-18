@@ -66,6 +66,11 @@ a FastAPI backend, and a shared contract package for browser-facing types.
    - `AI_PROVIDER=openai` with `OPENAI_API_KEY` and `OPENAI_MODEL`
    - `AI_PROVIDER=gemini` with `GEMINI_API_KEY` and `GEMINI_MODEL`
 
+Local startup also seeds a default demo account:
+
+- username: `test`
+- password: `12345678`
+
 ## Run Locally
 
 Start both apps with one command:
