@@ -271,6 +271,82 @@ export interface ResolveAiInteractionRequest {
   final_text?: string;
 }
 
+export type CollaborationConnectionState =
+  | "connecting"
+  | "connected"
+  | "reconnecting"
+  | "disconnected";
+
+export interface CollaborationPresence {
+  user_id: string;
+  username: string;
+  role: AccessRole;
+  last_active_at: string;
+}
+
+export interface CollaborationDocumentState {
+  id: string;
+  title: string;
+  content: string;
+  updated_at: string;
+  version_id: string;
+  latest_version?: DocumentVersion;
+}
+
+export interface CollaborationSnapshotEvent {
+  type: "snapshot";
+  document: CollaborationDocumentState;
+  presence: CollaborationPresence[];
+}
+
+export interface CollaborationPresenceEvent {
+  type: "presence";
+  presence: CollaborationPresence[];
+}
+
+export interface CollaborationDocumentUpdatedEvent {
+  type: "document.updated";
+  document: CollaborationDocumentState;
+  updated_by: Pick<UserProfile, "id" | "username" | "email">;
+}
+
+export interface CollaborationAckEvent {
+  type: "ack";
+  document: CollaborationDocumentState;
+}
+
+export interface CollaborationErrorEvent {
+  type: "error";
+  code: ApiErrorCode;
+  message: string;
+}
+
+export type CollaborationServerEvent =
+  | CollaborationSnapshotEvent
+  | CollaborationPresenceEvent
+  | CollaborationDocumentUpdatedEvent
+  | CollaborationAckEvent
+  | CollaborationErrorEvent;
+
+export interface CollaborationDocumentUpdateMessage {
+  type: "document.update";
+  title: string;
+  content: string;
+}
+
+export interface CollaborationActivityMessage {
+  type: "activity";
+}
+
+export interface CollaborationPingMessage {
+  type: "ping";
+}
+
+export type CollaborationClientMessage =
+  | CollaborationDocumentUpdateMessage
+  | CollaborationActivityMessage
+  | CollaborationPingMessage;
+
 export const uuidRegex =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
