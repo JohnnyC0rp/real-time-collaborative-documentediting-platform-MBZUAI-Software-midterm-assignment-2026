@@ -18,6 +18,7 @@ const testState = vi.hoisted(() => {
     },
     content: "<p>Alpha Beta</p>",
     shares: [],
+    share_links: [],
     versions: [
       {
         id: "version-1",

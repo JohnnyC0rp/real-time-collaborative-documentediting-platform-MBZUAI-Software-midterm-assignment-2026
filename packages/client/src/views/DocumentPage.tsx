@@ -6,24 +6,31 @@ import type {
   CollaborationDocumentState,
   CollaborationPresence,
   DocumentDetail,
+  GuestAccessSession,
   SubmitAiActionRequest
 } from "@collab/shared";
 import { EditorContent, useEditor, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { CollaborationPanel } from "../components/CollaborationPanel";
 import { RichTextToolbar } from "../components/RichTextToolbar";
 import { RoleBadge } from "../components/RoleBadge";
+import { ShareAccessPanel } from "../components/ShareAccessPanel";
 import { useAuth } from "../context/AuthContext";
 import { listAiHistory, resolveAiInteraction, streamAiAction } from "../lib/ai";
 import { DocumentCollaborationSession } from "../lib/collaboration";
 import {
+  createGuestAccessSession,
+  createShareLink,
   deleteDocument,
   getDocument,
+  getOrCreateGuestKey,
   removeShare,
+  revokeShareLink,
   restoreVersion,
   shareDocument,
+  updateGuestDocument,
   updateDocument
 } from "../lib/documents";
 
@@ -251,9 +258,14 @@ function isAbortError(error: unknown) {
 
 export function DocumentPage() {
   const auth = useAuth();
+  const location = useLocation();
   const navigate = useNavigate();
   const { documentId = "" } = useParams();
+  const shareToken = new URLSearchParams(location.search).get("token")?.trim() ?? "";
+  const isGuestAccess = location.pathname.startsWith("/shared/");
+  const guestKey = isGuestAccess && shareToken ? getOrCreateGuestKey(shareToken) : null;
   const [document, setDocument] = useState<DocumentDetail | null>(null);
+  const [guestSession, setGuestSession] = useState<GuestAccessSession | null>(null);
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("<p></p>");
   const [isLoading, setIsLoading] = useState(true);
@@ -262,6 +274,9 @@ export function DocumentPage() {
   const [shareIdentifier, setShareIdentifier] = useState("");
   const [shareRole, setShareRole] = useState<"editor" | "viewer">("viewer");
   const [isSharing, setIsSharing] = useState(false);
+  const [creatingShareLinkRole, setCreatingShareLinkRole] = useState<"editor" | "viewer" | null>(null);
+  const [shareLinkStatusMessage, setShareLinkStatusMessage] = useState("");
+  const [revokingShareLinkId, setRevokingShareLinkId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [restoringVersionId, setRestoringVersionId] = useState<string | null>(null);
   const [previewVersionId, setPreviewVersionId] = useState<string | null>(null);
@@ -308,17 +323,22 @@ export function DocumentPage() {
     }
   });
 
-  const canEdit = document ? document.role === "owner" || document.role === "editor" : false;
-  const canManageShares = document?.role === "owner";
-  const canViewAiHistory = document?.role === "owner";
-  const canUseAi = Boolean(document && canEdit);
+  const canEdit = guestSession
+    ? guestSession.role === "editor"
+    : document
+      ? document.role === "owner" || document.role === "editor"
+      : false;
+  const canManageShares = !guestSession && document?.role === "owner";
+  const canViewAiHistory = !guestSession && document?.role === "owner";
+  const canRestoreVersions = !guestSession && canEdit;
+  const canUseAi = Boolean(document && canEdit && !guestSession);
   const suggestionSegments = splitSuggestionSegments(proposalDraft);
   const selectedSuggestionText = suggestionSegments
     .filter((_, index) => selectedSegments.includes(index))
     .join("\n\n")
     .trim();
   const currentReviewText = editor ? getCurrentReviewText(editor, aiReview) : "";
-  const currentUserId = auth.user?.id ?? null;
+  const currentUserId = guestSession?.actor.id ?? auth.user?.id ?? null;
 
   function applyCollaborationDocumentState(nextState: CollaborationDocumentState, saveMessage: string) {
     setDocument((currentDocument) =>
@@ -379,8 +399,28 @@ export function DocumentPage() {
 
     async function loadDocument() {
       try {
+        if (isGuestAccess) {
+          if (!shareToken || !guestKey) {
+            throw new Error("Share link is missing a valid guest token");
+          }
+
+          const nextGuestSession = await createGuestAccessSession(shareToken, {
+            guest_key: guestKey
+          });
+          if (nextGuestSession.document.id !== documentId) {
+            throw new Error("This share link does not belong to the requested document");
+          }
+          if (isMounted) {
+            setGuestSession(nextGuestSession);
+            applyDocument(nextGuestSession.document);
+            setSaveStatus(`Opened shared document as ${nextGuestSession.actor.username}`);
+          }
+          return;
+        }
+
         const nextDocument = await getDocument(documentId);
         if (isMounted) {
+          setGuestSession(null);
           applyDocument(nextDocument);
         }
       } catch (error) {
@@ -402,7 +442,7 @@ export function DocumentPage() {
     return () => {
       isMounted = false;
     };
-  }, [documentId]);
+  }, [documentId, guestKey, isGuestAccess, shareToken]);
 
   useEffect(() => {
     return () => {
@@ -423,7 +463,21 @@ export function DocumentPage() {
   }, [canEdit, document?.id, editor]);
 
   useEffect(() => {
-    if (!document || !auth.accessToken) {
+    const collaborationAuth =
+      guestSession && shareToken && guestKey
+        ? {
+            kind: "guest" as const,
+            shareToken,
+            guestKey
+          }
+        : auth.accessToken
+          ? {
+              kind: "user" as const,
+              accessToken: auth.accessToken
+            }
+          : null;
+
+    if (!document || !collaborationAuth) {
       setCollaborationPresence([]);
       setCollaborationState("disconnected");
       collaborationSessionRef.current?.close();
@@ -431,7 +485,7 @@ export function DocumentPage() {
       return;
     }
 
-    const session = new DocumentCollaborationSession(document.id, auth.accessToken, {
+    const session = new DocumentCollaborationSession(document.id, collaborationAuth, {
       onAck: (event) => {
         lastSavedSnapshot.current = documentSnapshot(event.document.title, event.document.content);
         lastCollaborationSnapshot.current = lastSavedSnapshot.current;
@@ -513,7 +567,7 @@ export function DocumentPage() {
       }
       session.close();
     };
-  }, [auth.accessToken, document?.id]);
+  }, [auth.accessToken, document?.id, guestKey, guestSession?.actor.id, shareToken]);
 
   useEffect(() => {
     if (!document || !canViewAiHistory) {
@@ -637,11 +691,18 @@ export function DocumentPage() {
     setSaveStatus(saveSource === "autosave" ? "Autosaving..." : "Saving...");
 
     try {
-      const nextDocument = await updateDocument(document.id, {
-        title: normalizedTitle,
-        content: contentOverride ?? content,
-        save_source: saveSource
-      });
+      const nextDocument =
+        guestSession && shareToken && guestKey
+          ? await updateGuestDocument(shareToken, document.id, guestKey, {
+              title: normalizedTitle,
+              content: contentOverride ?? content,
+              save_source: saveSource
+            })
+          : await updateDocument(document.id, {
+              title: normalizedTitle,
+              content: contentOverride ?? content,
+              save_source: saveSource
+            });
       setErrorMessage("");
       applyDocument(nextDocument);
       return nextDocument;
@@ -685,6 +746,57 @@ export function DocumentPage() {
       applyDocument(nextDocument);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Failed to remove share");
+    }
+  }
+
+  async function handleCreateShareLink(role: "editor" | "viewer") {
+    if (!document) {
+      return;
+    }
+
+    setCreatingShareLinkRole(role);
+    setErrorMessage("");
+
+    try {
+      const nextDocument = await createShareLink(document.id, { role });
+      applyDocument(nextDocument);
+      setShareLinkStatusMessage(
+        `${role === "editor" ? "Edit" : "View"} link is ready. Copy it from the sharing panel.`
+      );
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Failed to create share link");
+    } finally {
+      setCreatingShareLinkRole(null);
+    }
+  }
+
+  async function handleRevokeShareLink(shareLinkId: string) {
+    if (!document) {
+      return;
+    }
+
+    setRevokingShareLinkId(shareLinkId);
+    setErrorMessage("");
+
+    try {
+      const nextDocument = await revokeShareLink(document.id, shareLinkId);
+      applyDocument(nextDocument);
+      setShareLinkStatusMessage("Share link revoked.");
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Failed to revoke share link");
+    } finally {
+      setRevokingShareLinkId(null);
+    }
+  }
+
+  async function handleCopyShareLink(token: string) {
+    const shareUrl = `${window.location.origin}/shared/${documentId}?token=${encodeURIComponent(token)}`;
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setShareLinkStatusMessage("Share link copied to the clipboard.");
+    } catch {
+      window.prompt("Copy share link", shareUrl);
+      setShareLinkStatusMessage("Share link opened for manual copy.");
     }
   }
 
@@ -1027,6 +1139,11 @@ export function DocumentPage() {
 
         <p className="save-chip">{saveStatus}</p>
         {errorMessage ? <p className="error-text">{errorMessage}</p> : null}
+        {guestSession ? (
+          <p className="preview-flag">
+            Opened as {guestSession.actor.username} through a {guestSession.role} link.
+          </p>
+        ) : null}
         {!canEdit ? (
           <p className="muted-copy">
             You have {document.role} access. The editor is read-only, and server-side
@@ -1213,8 +1330,9 @@ export function DocumentPage() {
           <section className="ai-section">
             <h2>AI Writing Assistant</h2>
             <p className="muted-copy">
-              AI actions are limited to owners and editors because they can create document changes
-              that are later versioned and reviewed.
+              {guestSession
+                ? "AI actions stay disabled in guest mode. Open the private document view after signing in if you want to use the assistant."
+                : "AI actions are limited to owners and editors because they can create document changes that are later versioned and reviewed."}
             </p>
           </section>
         )}
@@ -1281,68 +1399,24 @@ export function DocumentPage() {
           )}
         </section>
 
-        <section className="panel">
-          <h2>Sharing</h2>
-          {canManageShares ? (
-            <form className="stack-form" onSubmit={handleShare}>
-              <label className="field">
-                <span>Email or username</span>
-                <input
-                  value={shareIdentifier}
-                  onChange={(event) => setShareIdentifier(event.target.value)}
-                />
-              </label>
-
-              <label className="field">
-                <span>Role</span>
-                <select
-                  value={shareRole}
-                  onChange={(event) => setShareRole(event.target.value as "editor" | "viewer")}
-                >
-                  <option value="viewer">Viewer</option>
-                  <option value="editor">Editor</option>
-                </select>
-              </label>
-
-              <button
-                className="primary-button"
-                disabled={isSharing || !shareIdentifier.trim()}
-                type="submit"
-              >
-                {isSharing ? "Sharing..." : "Add or update share"}
-              </button>
-            </form>
-          ) : (
-            <p className="muted-copy">Only owners can change sharing rules.</p>
-          )}
-
-          <div className="stack-list">
-            {document.shares.length === 0 ? (
-              <p className="muted-copy">No extra collaborators yet.</p>
-            ) : (
-              document.shares.map((share) => (
-                <article key={share.id} className="list-card">
-                  <div>
-                    <strong>{share.username}</strong>
-                    <p>{share.email}</p>
-                  </div>
-                  <div className="share-actions">
-                    <RoleBadge role={share.role} />
-                    {canManageShares ? (
-                      <button
-                        className="ghost-link"
-                        type="button"
-                        onClick={() => void handleRemoveShare(share.id)}
-                      >
-                        Remove
-                      </button>
-                    ) : null}
-                  </div>
-                </article>
-              ))
-            )}
-          </div>
-        </section>
+        <ShareAccessPanel
+          canManageShares={Boolean(canManageShares)}
+          copyStatusMessage={shareLinkStatusMessage}
+          document={document}
+          isCreatingLinkRole={creatingShareLinkRole}
+          isGuestAccess={Boolean(guestSession)}
+          isRevokingLinkId={revokingShareLinkId}
+          isSharing={isSharing}
+          onCopyLink={handleCopyShareLink}
+          onCreateLink={(role) => void handleCreateShareLink(role)}
+          onRemoveShare={(shareId) => void handleRemoveShare(shareId)}
+          onRevokeLink={(shareLinkId) => void handleRevokeShareLink(shareLinkId)}
+          onShareIdentifierChange={setShareIdentifier}
+          onShareRoleChange={setShareRole}
+          onSubmitShare={handleShare}
+          shareIdentifier={shareIdentifier}
+          shareRole={shareRole}
+        />
 
         <section className="panel">
           <div className="preview-header">
@@ -1457,7 +1531,7 @@ export function DocumentPage() {
                   >
                     {previewVersion?.id === version.id ? "Previewing" : "Preview"}
                   </button>
-                  {canEdit ? (
+                  {canRestoreVersions ? (
                     <button
                       className="ghost-link"
                       disabled={restoringVersionId === version.id}
