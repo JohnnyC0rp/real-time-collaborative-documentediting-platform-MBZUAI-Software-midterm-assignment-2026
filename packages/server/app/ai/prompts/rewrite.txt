@@ -1,0 +1,16 @@
+Rewrite the selected text for clarity and flow while preserving meaning.
+
+Selected text:
+{selected_text}
+
+Previous context:
+{before_context}
+
+Following context:
+{after_context}
+
+Nearby outline:
+{outline_summary}
+
+Extra instruction:
+{instruction}
