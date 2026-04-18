@@ -217,6 +217,7 @@ textarea {
 .document-card-header,
 .document-meta-line,
 .document-actions,
+.share-link-actions,
 .share-actions,
 .history-actions,
 .preview-meta,
@@ -521,6 +522,17 @@ textarea {
 .stack-list {
   display: grid;
   gap: 12px;
+}
+
+.share-link-card {
+  gap: 12px;
+}
+
+.share-link-url {
+  margin: 8px 0 0 !important;
+  word-break: break-all;
+  font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
+  font-size: 0.88rem;
 }
 
 .list-card-active {
