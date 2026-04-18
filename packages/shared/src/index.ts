@@ -278,6 +278,9 @@ export interface AiInteractionRecord {
   selection_text_preview: string;
   suggestion_preview: string | null;
   error_code: ApiErrorCode | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  estimated_cost_usd: number | null;
 }
 
 export interface AiHistoryResponse {

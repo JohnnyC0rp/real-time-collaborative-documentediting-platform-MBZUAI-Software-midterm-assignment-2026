@@ -248,6 +248,9 @@ class AiInteractionResponse(BaseModel):
     selection_text_preview: str
     suggestion_preview: str | None
     error_code: str | None
+    input_tokens: int | None
+    output_tokens: int | None
+    estimated_cost_usd: float | None
 
 
 class AiHistoryResponse(BaseModel):

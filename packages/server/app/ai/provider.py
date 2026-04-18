@@ -1,4 +1,5 @@
 import json
+import math
 import re
 import urllib.error
 import urllib.request
@@ -25,6 +26,9 @@ class AiGenerationInput:
 class AiProviderResponse:
     text: str
     model_id: str
+    input_tokens: int
+    output_tokens: int
+    estimated_cost_usd: float
 
 
 class BaseAiProvider:
@@ -48,7 +52,15 @@ class LocalAiProvider(BaseAiProvider):
         else:
             raise AppError(400, "VALIDATION_ERROR", "Unsupported AI action")
 
-        return AiProviderResponse(text=text, model_id="local-fallback-v1")
+        input_tokens = estimate_token_count(generation_input.system_prompt, generation_input.user_prompt)
+        output_tokens = estimate_token_count(text)
+        return AiProviderResponse(
+            text=text,
+            model_id="local-fallback-v1",
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            estimated_cost_usd=0.0
+        )
 
 
 class OpenAiProvider(BaseAiProvider):
@@ -56,6 +68,8 @@ class OpenAiProvider(BaseAiProvider):
         self._base_url = settings.openai_base_url.rstrip("/")
         self._api_key = settings.openai_api_key
         self._model = settings.openai_model
+        self._input_cost_per_1k_tokens = settings.openai_input_cost_per_1k_tokens
+        self._output_cost_per_1k_tokens = settings.openai_output_cost_per_1k_tokens
 
     def generate(self, generation_input: AiGenerationInput) -> AiProviderResponse:
         if not self._api_key:
@@ -103,7 +117,24 @@ class OpenAiProvider(BaseAiProvider):
         if not content:
             raise AppError(502, "SERVER_ERROR", "AI provider returned empty output")
 
-        return AiProviderResponse(text=content, model_id=self._model)
+        usage = body.get("usage", {})
+        input_tokens = int(
+            usage.get("prompt_tokens")
+            or estimate_token_count(generation_input.system_prompt, generation_input.user_prompt)
+        )
+        output_tokens = int(usage.get("completion_tokens") or estimate_token_count(content))
+        return AiProviderResponse(
+            text=content,
+            model_id=self._model,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            estimated_cost_usd=estimate_cost_usd(
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                input_cost_per_1k_tokens=self._input_cost_per_1k_tokens,
+                output_cost_per_1k_tokens=self._output_cost_per_1k_tokens
+            )
+        )
 
 
 class GeminiProvider(BaseAiProvider):
@@ -111,6 +142,8 @@ class GeminiProvider(BaseAiProvider):
         self._base_url = settings.gemini_base_url.rstrip("/")
         self._api_key = settings.gemini_api_key
         self._model = settings.gemini_model
+        self._input_cost_per_1k_tokens = settings.gemini_input_cost_per_1k_tokens
+        self._output_cost_per_1k_tokens = settings.gemini_output_cost_per_1k_tokens
 
     def generate(self, generation_input: AiGenerationInput) -> AiProviderResponse:
         if not self._api_key:
@@ -171,7 +204,24 @@ class GeminiProvider(BaseAiProvider):
                 raise AppError(502, "SERVER_ERROR", f"Gemini blocked the request: {block_reason}")
             raise AppError(502, "SERVER_ERROR", "Gemini returned empty output")
 
-        return AiProviderResponse(text=text, model_id=self._model)
+        usage = body.get("usageMetadata", {})
+        input_tokens = int(
+            usage.get("promptTokenCount")
+            or estimate_token_count(generation_input.system_prompt, generation_input.user_prompt)
+        )
+        output_tokens = int(usage.get("candidatesTokenCount") or estimate_token_count(text))
+        return AiProviderResponse(
+            text=text,
+            model_id=self._model,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            estimated_cost_usd=estimate_cost_usd(
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                input_cost_per_1k_tokens=self._input_cost_per_1k_tokens,
+                output_cost_per_1k_tokens=self._output_cost_per_1k_tokens
+            )
+        )
 
 
 def get_ai_provider() -> BaseAiProvider:
@@ -181,6 +231,29 @@ def get_ai_provider() -> BaseAiProvider:
     if settings.ai_provider == "gemini":
         return GeminiProvider(settings)
     return LocalAiProvider()
+
+
+def estimate_token_count(*chunks: str) -> int:
+    combined_text = "".join(chunk for chunk in chunks if chunk)
+    if not combined_text:
+        return 0
+    return max(1, math.ceil(len(combined_text) / 4))
+
+
+def estimate_cost_usd(
+    *,
+    input_tokens: int,
+    output_tokens: int,
+    input_cost_per_1k_tokens: float,
+    output_cost_per_1k_tokens: float
+) -> float:
+    # Tiny heuristic, huge utility: reviewers can still see per-request cost even when
+    # the provider does not hand us perfect billing metadata on a silver platter.
+    estimated_cost = (
+        (input_tokens / 1000) * input_cost_per_1k_tokens
+        + (output_tokens / 1000) * output_cost_per_1k_tokens
+    )
+    return round(estimated_cost, 6)
 
 
 def cleanup_text(value: str) -> str:

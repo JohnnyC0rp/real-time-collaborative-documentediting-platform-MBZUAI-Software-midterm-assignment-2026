@@ -62,6 +62,12 @@ class JsonStore:
                 user["is_guest"] = False
                 did_change = True
 
+        for interaction in state["ai_interactions"]:
+            for key in ("input_tokens", "output_tokens", "estimated_cost_usd"):
+                if key not in interaction:
+                    interaction[key] = None
+                    did_change = True
+
         for document in state["documents"]:
             if "shares" not in document:
                 document["shares"] = []
@@ -272,7 +278,10 @@ class JsonStore:
             "prompt_sha256": None,
             "response_sha256": None,
             "final_text_sha256": None,
-            "error_code": None
+            "error_code": None,
+            "input_tokens": None,
+            "output_tokens": None,
+            "estimated_cost_usd": None
         }
 
         def mutation(state: dict[str, list[dict[str, Any]]]) -> dict[str, Any]:
@@ -348,7 +357,10 @@ class JsonStore:
         current_document_version_id: str,
         suggestion_preview: str,
         prompt_sha256: str,
-        response_sha256: str
+        response_sha256: str,
+        input_tokens: int,
+        output_tokens: int,
+        estimated_cost_usd: float
     ) -> dict[str, Any] | None:
         def mutation(state: dict[str, list[dict[str, Any]]]) -> dict[str, Any] | None:
             for interaction in state["ai_interactions"]:
@@ -362,6 +374,9 @@ class JsonStore:
                 interaction["suggestion_preview"] = suggestion_preview
                 interaction["prompt_sha256"] = prompt_sha256
                 interaction["response_sha256"] = response_sha256
+                interaction["input_tokens"] = input_tokens
+                interaction["output_tokens"] = output_tokens
+                interaction["estimated_cost_usd"] = estimated_cost_usd
                 return deepcopy(interaction)
 
             return None

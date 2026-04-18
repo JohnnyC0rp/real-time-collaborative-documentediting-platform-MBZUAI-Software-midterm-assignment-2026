@@ -140,7 +140,10 @@ def to_ai_interaction_response(interaction: dict, store: JsonStore) -> AiInterac
         selection_plain_text_end=interaction["selection_plain_text_end"],
         selection_text_preview=interaction["selection_text_preview"],
         suggestion_preview=interaction["suggestion_preview"],
-        error_code=interaction["error_code"]
+        error_code=interaction["error_code"],
+        input_tokens=interaction.get("input_tokens"),
+        output_tokens=interaction.get("output_tokens"),
+        estimated_cost_usd=interaction.get("estimated_cost_usd")
     )
 
 
@@ -262,7 +265,10 @@ async def submit_ai_action(
                 current_document_version_id=current_document_version_id,
                 suggestion_preview=preview_text(suggestion_text) or "",
                 prompt_sha256=sha256_text(f"{system_prompt}\n\n{user_prompt}") or "",
-                response_sha256=sha256_text(suggestion_text) or ""
+                response_sha256=sha256_text(suggestion_text) or "",
+                input_tokens=provider_response.input_tokens,
+                output_tokens=provider_response.output_tokens,
+                estimated_cost_usd=provider_response.estimated_cost_usd
             )
 
             result = AiActionResultResponse(

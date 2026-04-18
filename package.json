@@ -17,6 +17,7 @@
     "check": "npm run check:shared && npm run check:client && npm run check:server",
     "test:client": "npm run test --workspace @collab/client",
     "test:server": "npm run test --workspace @collab/server",
-    "test": "npm run test:server && npm run test:client"
+    "test": "npm run test:server && npm run test:client",
+    "test:e2e": "npm run test:e2e --workspace @collab/client"
   }
 }

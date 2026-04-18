@@ -28,9 +28,13 @@ class Settings(BaseSettings):
     openai_base_url: str = "https://api.openai.com/v1"
     openai_api_key: str | None = None
     openai_model: str = "gpt-4.1-mini"
+    openai_input_cost_per_1k_tokens: float = 0.0
+    openai_output_cost_per_1k_tokens: float = 0.0
     gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta"
     gemini_api_key: str | None = None
     gemini_model: str = "gemini-2.5-flash-lite"
+    gemini_input_cost_per_1k_tokens: float = 0.0
+    gemini_output_cost_per_1k_tokens: float = 0.0
 
     model_config = SettingsConfigDict(
         env_file=str(REPO_ROOT / ".env"),

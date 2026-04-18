@@ -18,7 +18,8 @@ a FastAPI backend, and a shared contract package for browser-facing types.
   awareness, reconnection, and last-write-wins reconciliation.
 - AI rewrite, summarize, translate, and restructure actions streamed with SSE,
   plus compare/apply/reject/edit review flow, cancellation, undo-after-apply,
-  prompt configuration, provider abstraction, and per-document history.
+  prompt configuration, provider abstraction, per-document history, and
+  estimated token plus cost tracking.
 - Automated backend and frontend tests for the core auth, document, AI, and
   collaboration flows required by the assignment baseline.
 
@@ -114,6 +115,14 @@ Package-specific commands:
 ```bash
 npm run test:server
 npm run test:client
+npm run test:e2e
+```
+
+The Playwright E2E suite expects the backend and frontend to already be running
+locally. Install browser binaries once with:
+
+```bash
+npx playwright install
 ```
 
 ## Architecture Overview

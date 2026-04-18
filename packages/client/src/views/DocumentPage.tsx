@@ -38,6 +38,20 @@ function formatTimestamp(value: string) {
   return new Date(value).toLocaleString();
 }
 
+function formatEstimatedCost(value: number | null) {
+  if (value === null) {
+    return "n/a";
+  }
+  return `$${value.toFixed(6)}`;
+}
+
+function formatTokenCount(value: number | null) {
+  if (value === null) {
+    return "n/a";
+  }
+  return value.toLocaleString();
+}
+
 function describeVersionSource(source: DocumentDetail["versions"][number]["source"]) {
   switch (source) {
     case "autosave":
@@ -1094,6 +1108,18 @@ export function DocumentPage() {
   const previewSourceVersion = previewVersion?.restored_from_version_id
     ? versionsById.get(previewVersion.restored_from_version_id) ?? null
     : null;
+  const aiHistoryTotals = aiHistory.reduce(
+    (totals, interaction) => ({
+      estimatedCostUsd: totals.estimatedCostUsd + (interaction.estimated_cost_usd ?? 0),
+      inputTokens: totals.inputTokens + (interaction.input_tokens ?? 0),
+      outputTokens: totals.outputTokens + (interaction.output_tokens ?? 0)
+    }),
+    {
+      estimatedCostUsd: 0,
+      inputTokens: 0,
+      outputTokens: 0
+    }
+  );
 
   return (
     <div className="document-workspace">
@@ -1425,14 +1451,29 @@ export function DocumentPage() {
             <div>
               <h2>AI history</h2>
               <p className="muted-copy">
-                Review AI requests, their outcomes, and which saved version an accepted suggestion
-                landed in.
+                Review AI requests, their outcomes, which saved version an accepted suggestion
+                landed in, and the estimated token and cost footprint of each request.
               </p>
             </div>
           </div>
 
           {canViewAiHistory ? (
             <>
+              <div className="history-summary-grid">
+                <article className="list-card">
+                  <strong>Total estimated cost</strong>
+                  <p>{formatEstimatedCost(aiHistoryTotals.estimatedCostUsd)}</p>
+                </article>
+                <article className="list-card">
+                  <strong>Input tokens</strong>
+                  <p>{aiHistoryTotals.inputTokens.toLocaleString()}</p>
+                </article>
+                <article className="list-card">
+                  <strong>Output tokens</strong>
+                  <p>{aiHistoryTotals.outputTokens.toLocaleString()}</p>
+                </article>
+              </div>
+
               <div className="history-filter-grid">
                 <label className="field">
                   <span>Action</span>
@@ -1483,6 +1524,11 @@ export function DocumentPage() {
                         {formatTimestamp(interaction.requested_at)}
                       </p>
                       <p>Model: {interaction.model_id}</p>
+                      <p>
+                        Tokens: {formatTokenCount(interaction.input_tokens)} in /{" "}
+                        {formatTokenCount(interaction.output_tokens)} out
+                      </p>
+                      <p>Estimated cost: {formatEstimatedCost(interaction.estimated_cost_usd)}</p>
                       {interaction.applied_document_version_id ? (
                         <p className="history-flag">
                           Applied into version {interaction.applied_document_version_id.slice(0, 8)}

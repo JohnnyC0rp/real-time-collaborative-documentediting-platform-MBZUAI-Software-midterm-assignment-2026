@@ -128,7 +128,13 @@ def test_document_crud_permissions_and_role_enforcement(client_factory) -> None:
 def test_ai_action_stream_and_history_use_mock_provider(client_factory, monkeypatch) -> None:
     class FakeProvider:
         def generate(self, _generation_input) -> AiProviderResponse:
-            return AiProviderResponse(text="Clearer rewritten text.", model_id="fake-model-v1")
+            return AiProviderResponse(
+                text="Clearer rewritten text.",
+                model_id="fake-model-v1",
+                input_tokens=42,
+                output_tokens=12,
+                estimated_cost_usd=0.0012
+            )
 
     monkeypatch.setattr("app.routers.ai.get_ai_provider", lambda: FakeProvider())
     monkeypatch.setattr("app.routers.ai.current_model_id", lambda: "fake-model-v1")
@@ -185,3 +191,5 @@ def test_ai_action_stream_and_history_use_mock_provider(client_factory, monkeypa
     payload = history_response.json()
     assert payload["total"] == 1
     assert payload["interactions"][0]["model_id"] == "fake-model-v1"
+    assert payload["interactions"][0]["input_tokens"] == 42
+    assert payload["interactions"][0]["estimated_cost_usd"] == 0.0012

@@ -355,6 +355,13 @@ textarea {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.history-summary-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-bottom: 16px;
+}
+
 .ai-wide-field {
   grid-column: 1 / -1;
 }
@@ -686,6 +693,7 @@ textarea {
   }
 
   .ai-form-grid,
+  .history-summary-grid,
   .history-filter-grid,
   .ai-review-grid,
   .ai-review-grid-stale {
