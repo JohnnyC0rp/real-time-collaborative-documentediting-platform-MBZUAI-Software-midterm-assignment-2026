@@ -1,9 +1,9 @@
 import json
-from copy import deepcopy
 from functools import lru_cache
 from pathlib import Path
 from threading import Lock
 from typing import Any, Callable, TypeVar
+from copy import deepcopy
 from uuid import uuid4
 
 from app.config import get_settings
@@ -25,7 +25,8 @@ class JsonStore:
         return {
             "users": [],
             "documents": [],
-            "refresh_sessions": []
+            "refresh_sessions": [],
+            "ai_interactions": []
         }
 
     def _read_state(self) -> dict[str, list[dict[str, Any]]]:
@@ -33,22 +34,11 @@ class JsonStore:
         with self._data_file.open("r", encoding="utf-8") as handle:
             state = json.load(handle)
 
-        for document in state.get("documents", []):
-            self._normalize_document(document)
-
+        state.setdefault("users", [])
+        state.setdefault("documents", [])
+        state.setdefault("refresh_sessions", [])
+        state.setdefault("ai_interactions", [])
         return state
-
-    def _normalize_document(self, document: dict[str, Any]) -> None:
-        document.setdefault("shares", [])
-        document.setdefault("versions", [])
-        document.setdefault("ai_history", [])
-
-        for interaction in document["ai_history"]:
-            interaction.setdefault("tone", None)
-            interaction.setdefault("output_length", None)
-            interaction.setdefault("response_text", "")
-            interaction.setdefault("error_message", None)
-            interaction.setdefault("decided_at", None)
 
     def _write_state(self, state: dict[str, list[dict[str, Any]]]) -> None:
         self._data_file.parent.mkdir(parents=True, exist_ok=True)
@@ -159,6 +149,193 @@ class JsonStore:
 
         self._mutate(mutation)
 
+    def create_ai_interaction(
+        self,
+        *,
+        document_id: str,
+        requested_by_user_id: str,
+        action: str,
+        requested_at: str,
+        model_id: str,
+        requested_document_version_id: str,
+        selection_plain_text_start: int,
+        selection_plain_text_end: int,
+        selection_text_preview: str,
+        target_language: str | None,
+        instruction: str | None
+    ) -> dict[str, Any]:
+        interaction = {
+            "id": str(uuid4()),
+            "document_id": document_id,
+            "requested_by_user_id": requested_by_user_id,
+            "action": action,
+            "stage": "accepted",
+            "resolution": "pending-review",
+            "requested_at": requested_at,
+            "completed_at": None,
+            "resolved_at": None,
+            "updated_at": requested_at,
+            "model_id": model_id,
+            "target_language": target_language,
+            "instruction": instruction,
+            "requested_document_version_id": requested_document_version_id,
+            "current_document_version_id": None,
+            "applied_document_version_id": None,
+            "selection_plain_text_start": selection_plain_text_start,
+            "selection_plain_text_end": selection_plain_text_end,
+            "selection_text_preview": selection_text_preview,
+            "suggestion_preview": None,
+            "prompt_sha256": None,
+            "response_sha256": None,
+            "final_text_sha256": None,
+            "error_code": None
+        }
+
+        def mutation(state: dict[str, list[dict[str, Any]]]) -> dict[str, Any]:
+            state["ai_interactions"].append(interaction)
+            return deepcopy(interaction)
+
+        return self._mutate(mutation)
+
+    def get_ai_interaction_by_id(self, interaction_id: str) -> dict[str, Any] | None:
+        state = self._read_state()
+        return next(
+            (
+                deepcopy(interaction)
+                for interaction in state["ai_interactions"]
+                if interaction["id"] == interaction_id
+            ),
+            None
+        )
+
+    def count_ai_requests_since(self, user_id: str, since_iso: str) -> int:
+        state = self._read_state()
+        return sum(
+            1
+            for interaction in state["ai_interactions"]
+            if interaction["requested_by_user_id"] == user_id
+            and interaction["requested_at"] >= since_iso
+        )
+
+    def list_ai_interactions(self, document_id: str) -> list[dict[str, Any]]:
+        state = self._read_state()
+        interactions = [
+            deepcopy(interaction)
+            for interaction in state["ai_interactions"]
+            if interaction["document_id"] == document_id
+        ]
+        interactions.sort(key=lambda item: item["requested_at"], reverse=True)
+        return interactions
+
+    def expire_pending_ai_interactions(
+        self,
+        *,
+        document_id: str,
+        requested_by_user_id: str,
+        expired_at: str
+    ) -> int:
+        def mutation(state: dict[str, list[dict[str, Any]]]) -> int:
+            expired_count = 0
+            for interaction in state["ai_interactions"]:
+                if interaction["document_id"] != document_id:
+                    continue
+                if interaction["requested_by_user_id"] != requested_by_user_id:
+                    continue
+                if interaction["resolution"] != "pending-review":
+                    continue
+                if interaction["stage"] not in {"accepted", "complete", "stale"}:
+                    continue
+
+                interaction["resolution"] = "expired"
+                interaction["resolved_at"] = expired_at
+                interaction["updated_at"] = expired_at
+                expired_count += 1
+
+            return expired_count
+
+        return self._mutate(mutation)
+
+    def complete_ai_interaction(
+        self,
+        *,
+        interaction_id: str,
+        stage: str,
+        completed_at: str,
+        current_document_version_id: str,
+        suggestion_preview: str,
+        prompt_sha256: str,
+        response_sha256: str
+    ) -> dict[str, Any] | None:
+        def mutation(state: dict[str, list[dict[str, Any]]]) -> dict[str, Any] | None:
+            for interaction in state["ai_interactions"]:
+                if interaction["id"] != interaction_id:
+                    continue
+
+                interaction["stage"] = stage
+                interaction["completed_at"] = completed_at
+                interaction["updated_at"] = completed_at
+                interaction["current_document_version_id"] = current_document_version_id
+                interaction["suggestion_preview"] = suggestion_preview
+                interaction["prompt_sha256"] = prompt_sha256
+                interaction["response_sha256"] = response_sha256
+                return deepcopy(interaction)
+
+            return None
+
+        return self._mutate(mutation)
+
+    def fail_ai_interaction(
+        self,
+        *,
+        interaction_id: str,
+        failed_at: str,
+        error_code: str
+    ) -> dict[str, Any] | None:
+        def mutation(state: dict[str, list[dict[str, Any]]]) -> dict[str, Any] | None:
+            for interaction in state["ai_interactions"]:
+                if interaction["id"] != interaction_id:
+                    continue
+
+                interaction["stage"] = "failed"
+                interaction["resolution"] = "failed"
+                interaction["completed_at"] = failed_at
+                interaction["resolved_at"] = failed_at
+                interaction["updated_at"] = failed_at
+                interaction["error_code"] = error_code
+                return deepcopy(interaction)
+
+            return None
+
+        return self._mutate(mutation)
+
+    def resolve_ai_interaction(
+        self,
+        *,
+        interaction_id: str,
+        resolution: str,
+        resolved_at: str,
+        applied_document_version_id: str | None,
+        suggestion_preview: str | None,
+        final_text_sha256: str | None
+    ) -> dict[str, Any] | None:
+        def mutation(state: dict[str, list[dict[str, Any]]]) -> dict[str, Any] | None:
+            for interaction in state["ai_interactions"]:
+                if interaction["id"] != interaction_id:
+                    continue
+
+                interaction["resolution"] = resolution
+                interaction["resolved_at"] = resolved_at
+                interaction["updated_at"] = resolved_at
+                interaction["applied_document_version_id"] = applied_document_version_id
+                if suggestion_preview is not None:
+                    interaction["suggestion_preview"] = suggestion_preview
+                interaction["final_text_sha256"] = final_text_sha256
+                return deepcopy(interaction)
+
+            return None
+
+        return self._mutate(mutation)
+
     def get_document_by_id(self, document_id: str) -> dict[str, Any] | None:
         state = self._read_state()
         for document in state["documents"]:
@@ -196,7 +373,6 @@ class JsonStore:
             "updated_at": created_at,
             "deleted_at": None,
             "shares": [],
-            "ai_history": [],
             "versions": [
                 {
                     "id": str(uuid4()),
@@ -352,106 +528,6 @@ class JsonStore:
                     }
                 )
                 return deepcopy(document)
-
-            return None
-
-        return self._mutate(mutation)
-
-    def create_ai_interaction(
-        self,
-        *,
-        document_id: str,
-        requested_by_user_id: str,
-        requested_at: str,
-        feature: str,
-        selection_mode: str,
-        tone: str | None,
-        output_length: str | None,
-        original_text: str,
-        prompt_text: str,
-        model: str
-    ) -> dict[str, Any] | None:
-        interaction = {
-            "id": str(uuid4()),
-            "feature": feature,
-            "requested_at": requested_at,
-            "requested_by_user_id": requested_by_user_id,
-            "selection_mode": selection_mode,
-            "tone": tone,
-            "output_length": output_length,
-            "original_text": original_text,
-            "prompt_text": prompt_text,
-            "model": model,
-            "response_text": "",
-            "status": "streaming",
-            "error_message": None,
-            "decided_at": None
-        }
-
-        def mutation(state: dict[str, list[dict[str, Any]]]) -> dict[str, Any] | None:
-            for document in state["documents"]:
-                if document["id"] != document_id or document["deleted_at"] is not None:
-                    continue
-
-                self._normalize_document(document)
-                document["ai_history"].insert(0, interaction)
-                return deepcopy(interaction)
-
-            return None
-
-        return self._mutate(mutation)
-
-    def finalize_ai_interaction(
-        self,
-        *,
-        document_id: str,
-        interaction_id: str,
-        status: str,
-        response_text: str,
-        error_message: str | None = None,
-        decided_at: str | None = None
-    ) -> dict[str, Any] | None:
-        def mutation(state: dict[str, list[dict[str, Any]]]) -> dict[str, Any] | None:
-            for document in state["documents"]:
-                if document["id"] != document_id or document["deleted_at"] is not None:
-                    continue
-
-                self._normalize_document(document)
-                for interaction in document["ai_history"]:
-                    if interaction["id"] != interaction_id:
-                        continue
-
-                    interaction["status"] = status
-                    interaction["response_text"] = response_text
-                    interaction["error_message"] = error_message
-                    interaction["decided_at"] = decided_at
-                    return deepcopy(interaction)
-
-            return None
-
-        return self._mutate(mutation)
-
-    def set_ai_interaction_feedback(
-        self,
-        *,
-        document_id: str,
-        interaction_id: str,
-        status: str,
-        decided_at: str
-    ) -> dict[str, Any] | None:
-        def mutation(state: dict[str, list[dict[str, Any]]]) -> dict[str, Any] | None:
-            for document in state["documents"]:
-                if document["id"] != document_id or document["deleted_at"] is not None:
-                    continue
-
-                self._normalize_document(document)
-                for interaction in document["ai_history"]:
-                    if interaction["id"] != interaction_id:
-                        continue
-
-                    interaction["status"] = status
-                    interaction["decided_at"] = decided_at
-                    return deepcopy(interaction)
 
             return None
 

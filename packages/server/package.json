@@ -5,6 +5,6 @@
   "scripts": {
     "dev": "uv run uvicorn app.main:app --reload --host 127.0.0.1 --port 8000",
     "start": "uv run uvicorn app.main:app --host 0.0.0.0 --port 8000",
-    "check": "uv run python -m compileall app"
+    "check": "python3 -m compileall app"
   }
 }

@@ -1,0 +1,16 @@
+Restructure the selected text into a clearer shape. You may improve ordering, add headings, or turn dense passages into concise bullets, but keep the meaning grounded in the original.
+
+Selected text:
+{selected_text}
+
+Previous context:
+{before_context}
+
+Following context:
+{after_context}
+
+Nearby outline:
+{outline_summary}
+
+Extra instruction:
+{instruction}

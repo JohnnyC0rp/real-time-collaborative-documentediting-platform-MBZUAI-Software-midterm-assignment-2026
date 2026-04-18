@@ -14,7 +14,7 @@ settings = get_settings()
 
 app = FastAPI(
     title=settings.app_name,
-    description="Collaborative document editor backend with auth, document management, and writing-assistant routes.",
+    description="Collaborative document editor backend with document CRUD and AI assistant APIs.",
     version="0.2.0"
 )
 

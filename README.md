@@ -15,16 +15,21 @@ backend, and shared TypeScript contracts for the browser-facing data model.
   document the signed-in user can access.
 - Rich-text editing with headings, bold, italic, ordered lists, bullet lists,
   and code blocks.
+- Selection-scoped AI actions for rewrite, summarize, translate, and
+  restructure, returned as review-first suggestions instead of silent edits.
 - Auto-save with visible status feedback.
 - Share management with `owner`, `editor`, and `viewer` roles.
 - Version history with one-click restore.
-- Writing assistant support for rewrite, summarize, and grammar cleanup with streamed suggestions and per-document history.
+- AI interaction history with request status, final outcome, and applied
+  version linkage for owners.
 
 ## Stack
 
 - Frontend: React, React Router, Vite, Tiptap
 - Backend: FastAPI, PyJWT, pwdlib
 - Persistence: JSON file storage inside `packages/server/data`
+- AI provider: local fallback by default, optional OpenAI or Gemini provider
+  via environment variables
 
 ## Repository layout
 
@@ -63,6 +68,11 @@ npm install
 cp .env.example .env
 ```
 
+The default `AI_PROVIDER=local` mode works offline and is useful for validating
+the UX and state transitions. For model-backed suggestions, switch
+`AI_PROVIDER=openai` and set `OPENAI_API_KEY` plus `OPENAI_MODEL` in `.env`, or
+switch to `AI_PROVIDER=gemini` and set `GEMINI_API_KEY` plus `GEMINI_MODEL`.
+
 3. Start the FastAPI backend:
 
 ```bash
@@ -79,8 +89,6 @@ npm run dev:client
 
 The backend listens on `http://localhost:8000`, and FastAPI serves interactive
 API documentation at `http://localhost:8000/docs`.
-
-The AI assistant defaults to `AI_PROVIDER=mock`, so Part 3 works locally without a live model. To point it at a real model later, switch `AI_PROVIDER` to `openai_compat`, set `AI_BASE_URL`, and provide `AI_MODEL` plus `AI_API_KEY` if your endpoint needs one. The Part 3 implementation notes live in `docs/part3-ai-assistant.md`.
 
 ## Validation
 

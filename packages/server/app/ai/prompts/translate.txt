@@ -1,0 +1,16 @@
+Translate the selected text into {target_language}. Preserve named entities and formatting cues when possible.
+
+Selected text:
+{selected_text}
+
+Previous context:
+{before_context}
+
+Following context:
+{after_context}
+
+Nearby outline:
+{outline_summary}
+
+Extra instruction:
+{instruction}

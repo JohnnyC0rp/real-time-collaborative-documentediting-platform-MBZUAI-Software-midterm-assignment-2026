@@ -1,5 +1,0 @@
-{
-  "rewrite": "Rewrite the target text in a {tone} tone. Keep the meaning, keep it readable, and return only the rewritten text.",
-  "summarize": "Summarize the target text at a {output_length} length. Keep the main point and return only the summary.",
-  "fix_grammar": "Fix grammar, spelling, punctuation, and awkward phrasing while keeping the original meaning. Return only the corrected text."
-}
