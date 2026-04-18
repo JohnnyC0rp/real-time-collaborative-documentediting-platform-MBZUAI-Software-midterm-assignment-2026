@@ -316,6 +316,127 @@ textarea {
   margin-bottom: 14px;
 }
 
+.ai-section {
+  display: grid;
+  gap: 16px;
+  margin-bottom: 22px;
+  padding: 20px;
+  border: 1px solid rgba(31, 41, 51, 0.1);
+  border-radius: 24px;
+  background:
+    linear-gradient(135deg, rgba(215, 235, 255, 0.55), rgba(255, 255, 255, 0.88)),
+    white;
+}
+
+.ai-status-chip {
+  margin: 0 !important;
+}
+
+.ai-action-row,
+.ai-submit-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.ai-form-grid,
+.history-filter-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.ai-wide-field {
+  grid-column: 1 / -1;
+}
+
+.ai-stream-card,
+.ai-review-card,
+.ai-segment-card {
+  border: 1px solid rgba(31, 41, 51, 0.12);
+  border-radius: 20px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.ai-stream-card pre,
+.ai-review-card pre {
+  margin: 10px 0 0;
+  white-space: pre-wrap;
+  font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
+  line-height: 1.6;
+  color: #364152;
+}
+
+.ai-review-shell {
+  display: grid;
+  gap: 14px;
+}
+
+.ai-review-banner {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 14px 16px;
+  border-radius: 18px;
+  background: rgba(0, 95, 115, 0.12);
+  color: #005f73;
+}
+
+.ai-review-banner-stale {
+  background: rgba(178, 85, 58, 0.14);
+  color: #8a341e;
+}
+
+.ai-review-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.ai-review-grid-stale {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.ai-review-card h3 {
+  margin: 0 0 10px;
+}
+
+.ai-review-card-editable {
+  display: grid;
+  gap: 10px;
+}
+
+.ai-proposal-textarea {
+  min-height: 220px;
+  width: 100%;
+  border: 1px solid rgba(31, 41, 51, 0.12);
+  border-radius: 18px;
+  padding: 14px;
+  resize: vertical;
+  background: rgba(255, 255, 255, 0.96);
+}
+
+.ai-segments {
+  display: grid;
+  gap: 12px;
+}
+
+.ai-segment-card {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.ai-segment-card span {
+  white-space: pre-wrap;
+  line-height: 1.6;
+  color: #364152;
+}
+
 .toolbar-button {
   border: 1px solid rgba(31, 41, 51, 0.14);
   background: white;
@@ -440,6 +561,13 @@ textarea {
   .document-header {
     grid-template-columns: 1fr;
     flex-direction: column;
+  }
+
+  .ai-form-grid,
+  .history-filter-grid,
+  .ai-review-grid,
+  .ai-review-grid-stale {
+    grid-template-columns: 1fr;
   }
 
   .panel {

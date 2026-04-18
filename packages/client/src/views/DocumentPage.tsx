@@ -1,10 +1,17 @@
-import type { DocumentDetail } from "@collab/shared";
-import { EditorContent, useEditor } from "@tiptap/react";
+import type {
+  AiActionResult,
+  AiActionType,
+  AiInteractionRecord,
+  DocumentDetail,
+  SubmitAiActionRequest
+} from "@collab/shared";
+import { EditorContent, useEditor, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { RichTextToolbar } from "../components/RichTextToolbar";
 import { RoleBadge } from "../components/RoleBadge";
+import { listAiHistory, resolveAiInteraction, streamAiAction } from "../lib/ai";
 import {
   deleteDocument,
   getDocument,
@@ -33,6 +40,183 @@ function describeVersionSource(source: DocumentDetail["versions"][number]["sourc
   }
 }
 
+function describeAiAction(action: AiActionType) {
+  switch (action) {
+    case "rewrite":
+      return "Rewrite";
+    case "summarize":
+      return "Summarize";
+    case "translate":
+      return "Translate";
+    case "restructure":
+      return "Restructure";
+    default:
+      return action;
+  }
+}
+
+function describeAiResolution(record: AiInteractionRecord) {
+  if (record.resolution === "pending-review") {
+    if (record.stage === "stale") {
+      return "Stale review";
+    }
+    if (record.stage === "accepted") {
+      return "In flight";
+    }
+    return "Ready for review";
+  }
+
+  switch (record.resolution) {
+    case "accepted":
+      return "Accepted";
+    case "edited-before-apply":
+      return "Edited before apply";
+    case "rejected":
+      return "Rejected";
+    case "expired":
+      return "Expired";
+    case "failed":
+      return "Failed";
+    default:
+      return record.resolution;
+  }
+}
+
+function buildDefaultSegmentIndexes(length: number) {
+  return Array.from({ length }, (_, index) => index);
+}
+
+function splitSuggestionSegments(value: string) {
+  return value
+    .split(/\n{2,}/)
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function plainTextToHtml(value: string) {
+  const blocks = value
+    .trim()
+    .split(/\n{2,}/)
+    .map((block) => block.trim())
+    .filter(Boolean);
+
+  if (blocks.length === 0) {
+    return "<p></p>";
+  }
+
+  return blocks
+    .map((block) => {
+      const lines = block.split("\n").map((line) => line.trimEnd());
+      if (lines.every((line) => line.startsWith("- "))) {
+        return `<ul>${lines
+          .map((line) => `<li>${escapeHtml(line.slice(2))}</li>`)
+          .join("")}</ul>`;
+      }
+
+      if (
+        lines.length > 1 &&
+        lines[0].length <= 72 &&
+        !/[.!?]$/.test(lines[0])
+      ) {
+        return `<h2>${escapeHtml(lines[0])}</h2><p>${lines
+          .slice(1)
+          .map(escapeHtml)
+          .join("<br>")}</p>`;
+      }
+
+      return `<p>${lines.map(escapeHtml).join("<br>")}</p>`;
+    })
+    .join("");
+}
+
+function collectOutlineSummary(editor: Editor, selectionFrom: number) {
+  const headings: Array<{ level: number; pos: number; text: string }> = [];
+
+  editor.state.doc.descendants((node, pos) => {
+    if (node.type.name === "heading" && node.textContent.trim()) {
+      headings.push({
+        level: Number(node.attrs.level ?? 1),
+        pos,
+        text: node.textContent.trim()
+      });
+    }
+    return true;
+  });
+
+  if (headings.length === 0) {
+    return "";
+  }
+
+  let anchorIndex = 0;
+  for (let index = 0; index < headings.length; index += 1) {
+    if (headings[index].pos <= selectionFrom) {
+      anchorIndex = index;
+    }
+  }
+
+  const startIndex = Math.max(0, anchorIndex - 2);
+  const endIndex = Math.min(headings.length, startIndex + 5);
+  return headings
+    .slice(startIndex, endIndex)
+    .map((heading) => `${"#".repeat(Math.min(heading.level, 3))} ${heading.text}`)
+    .join("\n");
+}
+
+function getSelectionPayload(editor: Editor): SubmitAiActionRequest["selection"] | null {
+  const { from, to } = editor.state.selection;
+  if (from === to) {
+    return null;
+  }
+
+  const plainTextBefore = editor.state.doc.textBetween(0, from, "\n\n");
+  const selectedText = editor.state.doc.textBetween(from, to, "\n\n").trim();
+  const plainTextAfter = editor.state.doc.textBetween(to, editor.state.doc.content.size, "\n\n");
+
+  if (!selectedText) {
+    return null;
+  }
+
+  return {
+    plain_text_start: plainTextBefore.length,
+    plain_text_end: plainTextBefore.length + selectedText.length,
+    tiptap_from: from,
+    tiptap_to: to,
+    text: selectedText,
+    before_context: plainTextBefore.slice(-1000),
+    after_context: plainTextAfter.slice(0, 1000),
+    outline_summary: collectOutlineSummary(editor, from)
+  };
+}
+
+function getCurrentReviewText(editor: Editor, review: AiActionResult | null) {
+  if (!review) {
+    return "";
+  }
+
+  const plainText = editor.state.doc.textBetween(0, editor.state.doc.content.size, "\n\n");
+  const excerpt = plainText.slice(
+    review.selection.plain_text_start,
+    review.selection.plain_text_end
+  );
+
+  if (excerpt.trim()) {
+    return excerpt;
+  }
+
+  const start = Math.max(0, review.selection.plain_text_start - 80);
+  const end = Math.min(plainText.length, review.selection.plain_text_end + 80);
+  return plainText.slice(start, end).trim();
+}
+
 export function DocumentPage() {
   const navigate = useNavigate();
   const { documentId = "" } = useParams();
@@ -48,6 +232,22 @@ export function DocumentPage() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [restoringVersionId, setRestoringVersionId] = useState<string | null>(null);
   const [previewVersionId, setPreviewVersionId] = useState<string | null>(null);
+  const [hasTextSelection, setHasTextSelection] = useState(false);
+  const [aiAction, setAiAction] = useState<AiActionType>("rewrite");
+  const [aiInstruction, setAiInstruction] = useState("");
+  const [aiTargetLanguage, setAiTargetLanguage] = useState("English");
+  const [isAiSubmitting, setIsAiSubmitting] = useState(false);
+  const [isAiResolving, setIsAiResolving] = useState(false);
+  const [aiStatusMessage, setAiStatusMessage] = useState("Select text to request AI help.");
+  const [aiStreamText, setAiStreamText] = useState("");
+  const [aiReview, setAiReview] = useState<AiActionResult | null>(null);
+  const [proposalDraft, setProposalDraft] = useState("");
+  const [selectedSegments, setSelectedSegments] = useState<number[]>([]);
+  const [aiHistory, setAiHistory] = useState<AiInteractionRecord[]>([]);
+  const [isAiHistoryLoading, setIsAiHistoryLoading] = useState(false);
+  const [aiHistoryActionFilter, setAiHistoryActionFilter] = useState("all");
+  const [aiHistoryResolutionFilter, setAiHistoryResolutionFilter] = useState("all");
+  const [aiHistoryRefreshToken, setAiHistoryRefreshToken] = useState(0);
   const lastSavedSnapshot = useRef("");
 
   const editor = useEditor({
@@ -57,11 +257,22 @@ export function DocumentPage() {
     immediatelyRender: false,
     onUpdate({ editor: currentEditor }) {
       setContent(currentEditor.getHTML());
+    },
+    onSelectionUpdate({ editor: currentEditor }) {
+      setHasTextSelection(currentEditor.state.selection.from !== currentEditor.state.selection.to);
     }
   });
 
   const canEdit = document ? document.role === "owner" || document.role === "editor" : false;
   const canManageShares = document?.role === "owner";
+  const canViewAiHistory = document?.role === "owner";
+  const canUseAi = Boolean(document && canEdit);
+  const suggestionSegments = splitSuggestionSegments(proposalDraft);
+  const selectedSuggestionText = suggestionSegments
+    .filter((_, index) => selectedSegments.includes(index))
+    .join("\n\n")
+    .trim();
+  const currentReviewText = editor ? getCurrentReviewText(editor, aiReview) : "";
 
   function applyDocument(nextDocument: DocumentDetail) {
     setDocument(nextDocument);
@@ -74,6 +285,7 @@ export function DocumentPage() {
     setSaveStatus(`Saved at ${formatTimestamp(nextDocument.updated_at)}`);
     if (editor && editor.getHTML() !== nextDocument.content) {
       editor.commands.setContent(nextDocument.content, false);
+      setHasTextSelection(editor.state.selection.from !== editor.state.selection.to);
     }
 
     setPreviewVersionId((currentPreviewVersionId) => {
@@ -124,37 +336,54 @@ export function DocumentPage() {
     }
 
     editor.setEditable(canEdit);
+    setHasTextSelection(editor.state.selection.from !== editor.state.selection.to);
     if (document && editor.getHTML() !== document.content) {
       editor.commands.setContent(document.content, false);
     }
   }, [canEdit, document?.id, editor]);
 
-  async function persistDocument(saveSource: "autosave" | "manual-update") {
-    if (!document) {
+  useEffect(() => {
+    if (!document || !canViewAiHistory) {
+      setAiHistory([]);
       return;
     }
 
-    const normalizedTitle = title.trim();
-    if (!normalizedTitle) {
-      setSaveStatus("Title is required before saving");
-      return;
+    const activeDocumentId = document.id;
+    let isMounted = true;
+
+    async function loadAiHistory() {
+      setIsAiHistoryLoading(true);
+      try {
+        const response = await listAiHistory(activeDocumentId, {
+          action: aiHistoryActionFilter === "all" ? undefined : aiHistoryActionFilter,
+          resolution: aiHistoryResolutionFilter === "all" ? undefined : aiHistoryResolutionFilter
+        });
+        if (isMounted) {
+          setAiHistory(response.interactions);
+        }
+      } catch (error) {
+        if (isMounted) {
+          setErrorMessage(error instanceof Error ? error.message : "Failed to load AI history");
+        }
+      } finally {
+        if (isMounted) {
+          setIsAiHistoryLoading(false);
+        }
+      }
     }
 
-    setSaveStatus(saveSource === "autosave" ? "Autosaving..." : "Saving...");
+    void loadAiHistory();
 
-    try {
-      const nextDocument = await updateDocument(document.id, {
-        title: normalizedTitle,
-        content,
-        save_source: saveSource
-      });
-      setErrorMessage("");
-      applyDocument(nextDocument);
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Failed to save document");
-      setSaveStatus("Save failed");
-    }
-  }
+    return () => {
+      isMounted = false;
+    };
+  }, [
+    aiHistoryActionFilter,
+    aiHistoryRefreshToken,
+    aiHistoryResolutionFilter,
+    canViewAiHistory,
+    document?.id
+  ]);
 
   useEffect(() => {
     if (!document || !canEdit) {
@@ -180,6 +409,50 @@ export function DocumentPage() {
       window.clearTimeout(timeoutId);
     };
   }, [canEdit, content, document?.id, title]);
+
+  useEffect(() => {
+    if (!aiReview) {
+      setSelectedSegments([]);
+      return;
+    }
+    setSelectedSegments(buildDefaultSegmentIndexes(splitSuggestionSegments(aiReview.suggestion_text).length));
+  }, [aiReview?.interaction_id]);
+
+  useEffect(() => {
+    setSelectedSegments((current) => current.filter((index) => index < suggestionSegments.length));
+  }, [proposalDraft]);
+
+  async function persistDocument(
+    saveSource: "autosave" | "manual-update",
+    contentOverride?: string
+  ) {
+    if (!document) {
+      return null;
+    }
+
+    const normalizedTitle = title.trim();
+    if (!normalizedTitle) {
+      setSaveStatus("Title is required before saving");
+      return null;
+    }
+
+    setSaveStatus(saveSource === "autosave" ? "Autosaving..." : "Saving...");
+
+    try {
+      const nextDocument = await updateDocument(document.id, {
+        title: normalizedTitle,
+        content: contentOverride ?? content,
+        save_source: saveSource
+      });
+      setErrorMessage("");
+      applyDocument(nextDocument);
+      return nextDocument;
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Failed to save document");
+      setSaveStatus("Save failed");
+      return null;
+    }
+  }
 
   async function handleShare(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -250,6 +523,175 @@ export function DocumentPage() {
     }
   }
 
+  async function handleRunAiAction() {
+    if (!editor || !document) {
+      return;
+    }
+
+    const selection = getSelectionPayload(editor);
+    if (!selection) {
+      setErrorMessage("Select text in the editor before requesting AI help");
+      return;
+    }
+
+    const requestedDocumentVersionId = document.versions[0]?.id ?? "";
+    const editorHtmlAtRequest = editor.getHTML();
+
+    setErrorMessage("");
+    setIsAiSubmitting(true);
+    setAiReview(null);
+    setProposalDraft("");
+    setAiStreamText("");
+    setAiStatusMessage(`Submitting ${describeAiAction(aiAction).toLowerCase()} request...`);
+
+    try {
+      await streamAiAction(
+        {
+          document_id: document.id,
+          action: aiAction,
+          selection,
+          requested_document_version_id: requestedDocumentVersionId,
+          instruction: aiInstruction.trim() || undefined,
+          target_language: aiAction === "translate" ? aiTargetLanguage.trim() || undefined : undefined
+        },
+        {
+          onAccepted: () => {
+            setAiStatusMessage("AI request accepted. Streaming suggestion...");
+          },
+          onStreaming: (event) => {
+            setAiStreamText(event.accumulated_text);
+          },
+          onResult: (result) => {
+            const nextStage = editor.getHTML() !== editorHtmlAtRequest ? "stale" : result.stage;
+            const nextReview: AiActionResult =
+              nextStage === result.stage ? result : { ...result, stage: "stale" };
+
+            setAiReview(nextReview);
+            setProposalDraft(result.suggestion_text);
+            setAiStreamText(result.suggestion_text);
+            setAiStatusMessage(
+              nextReview.stage === "stale"
+                ? "The target text changed while the request was running. Review carefully before applying."
+                : "Suggestion ready for review."
+            );
+            setAiHistoryRefreshToken((value) => value + 1);
+          },
+          onFailed: (message) => {
+            setErrorMessage(message);
+            setAiStatusMessage("AI request failed");
+            setAiHistoryRefreshToken((value) => value + 1);
+          }
+        }
+      );
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "AI request failed");
+      setAiStatusMessage("AI request failed");
+    } finally {
+      setIsAiSubmitting(false);
+    }
+  }
+
+  async function handleRejectAiSuggestion() {
+    if (!aiReview) {
+      return;
+    }
+
+    setIsAiResolving(true);
+    setErrorMessage("");
+
+    try {
+      await resolveAiInteraction(aiReview.interaction_id, {
+        resolution: "rejected"
+      });
+      setAiReview(null);
+      setProposalDraft("");
+      setAiStreamText("");
+      setAiStatusMessage("Suggestion rejected. The document was left unchanged.");
+      setAiHistoryRefreshToken((value) => value + 1);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Failed to reject suggestion");
+    } finally {
+      setIsAiResolving(false);
+    }
+  }
+
+  async function handleApplyAiSuggestion() {
+    if (!editor || !document || !aiReview) {
+      return;
+    }
+
+    if (!selectedSuggestionText) {
+      setErrorMessage("Select at least one segment before applying the suggestion");
+      return;
+    }
+
+    const range =
+      aiReview.stage === "stale"
+        ? {
+            from: editor.state.selection.from,
+            to: editor.state.selection.to
+          }
+        : {
+            from: aiReview.selection.tiptap_from,
+            to: aiReview.selection.tiptap_to
+          };
+
+    if (range.from === range.to) {
+      setErrorMessage("Select the current target text before applying a stale suggestion");
+      return;
+    }
+
+    setIsAiResolving(true);
+    setErrorMessage("");
+
+    try {
+      editor.chain().focus().insertContentAt(range, plainTextToHtml(selectedSuggestionText)).run();
+      const nextContent = editor.getHTML();
+      const savedDocument = await persistDocument("manual-update", nextContent);
+      if (!savedDocument) {
+        return;
+      }
+
+      const latestVersionId = savedDocument.versions[0]?.id;
+      if (!latestVersionId) {
+        throw new Error("Unable to determine the saved document version");
+      }
+
+      const resolution =
+        selectedSuggestionText.trim() === aiReview.suggestion_text.trim()
+          ? "accepted"
+          : "edited-before-apply";
+
+      await resolveAiInteraction(aiReview.interaction_id, {
+        resolution,
+        applied_document_version_id: latestVersionId,
+        final_text: selectedSuggestionText
+      });
+
+      setAiReview(null);
+      setProposalDraft("");
+      setAiStreamText("");
+      setAiStatusMessage(
+        resolution === "accepted"
+          ? "AI suggestion applied as a single saved document change."
+          : "Edited AI suggestion applied and linked to the saved document version."
+      );
+      setAiHistoryRefreshToken((value) => value + 1);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Failed to apply suggestion");
+    } finally {
+      setIsAiResolving(false);
+    }
+  }
+
+  function toggleSegment(index: number) {
+    setSelectedSegments((current) =>
+      current.includes(index)
+        ? current.filter((value) => value !== index)
+        : [...current, index].sort((left, right) => left - right)
+    );
+  }
+
   if (isLoading) {
     return (
       <section className="panel">
@@ -306,7 +748,11 @@ export function DocumentPage() {
 
           <div className="document-actions">
             {canEdit ? (
-              <button className="primary-button" type="button" onClick={() => void persistDocument("manual-update")}>
+              <button
+                className="primary-button"
+                type="button"
+                onClick={() => void persistDocument("manual-update")}
+              >
                 Save now
               </button>
             ) : null}
@@ -332,6 +778,170 @@ export function DocumentPage() {
           </p>
         ) : null}
 
+        {canUseAi ? (
+          <section className="ai-section">
+            <div className="preview-header">
+              <div>
+                <h2>AI Writing Assistant</h2>
+                <p className="muted-copy">
+                  AI requests are scoped to the selected text, nearby context, and a short heading
+                  outline. Suggestions stay review-first until you apply them.
+                </p>
+              </div>
+              <span className="save-chip ai-status-chip">{aiStatusMessage}</span>
+            </div>
+
+            <div className="ai-action-row">
+              {(["rewrite", "summarize", "translate", "restructure"] as const).map((action) => (
+                <button
+                  key={action}
+                  className={`toolbar-button${aiAction === action ? " active" : ""}`}
+                  type="button"
+                  onClick={() => setAiAction(action)}
+                >
+                  {describeAiAction(action)}
+                </button>
+              ))}
+            </div>
+
+            <div className="ai-form-grid">
+              {aiAction === "translate" ? (
+                <label className="field">
+                  <span>Target language</span>
+                  <input
+                    value={aiTargetLanguage}
+                    onChange={(event) => setAiTargetLanguage(event.target.value)}
+                    placeholder="English, Arabic, Chinese..."
+                  />
+                </label>
+              ) : null}
+
+              <label className="field ai-wide-field">
+                <span>Optional instruction</span>
+                <input
+                  value={aiInstruction}
+                  onChange={(event) => setAiInstruction(event.target.value)}
+                  placeholder="For example: shorter, more formal, or clearer for beginners"
+                />
+              </label>
+            </div>
+
+            <div className="document-actions ai-submit-row">
+              <button
+                className="primary-button"
+                disabled={isAiSubmitting || !hasTextSelection}
+                type="button"
+                onClick={() => void handleRunAiAction()}
+              >
+                {isAiSubmitting ? "Requesting..." : `Run ${describeAiAction(aiAction)}`}
+              </button>
+              {!hasTextSelection ? (
+                <p className="muted-copy">Select text in the editor to enable AI actions.</p>
+              ) : null}
+            </div>
+
+            {aiStreamText && !aiReview ? (
+              <div className="ai-stream-card">
+                <strong>Streaming draft</strong>
+                <pre>{aiStreamText}</pre>
+              </div>
+            ) : null}
+
+            {aiReview ? (
+              <div className="ai-review-shell">
+                <div className={`ai-review-banner${aiReview.stage === "stale" ? " ai-review-banner-stale" : ""}`}>
+                  <strong>{aiReview.stage === "stale" ? "Stale suggestion" : "Suggestion ready"}</strong>
+                  <span>
+                    Requested at {formatTimestamp(aiReview.requested_at)} with model {aiReview.model_id}
+                  </span>
+                </div>
+
+                <div className={`ai-review-grid${aiReview.stage === "stale" ? " ai-review-grid-stale" : ""}`}>
+                  <article className="ai-review-card">
+                    <h3>Original at request time</h3>
+                    <pre>{aiReview.original_text}</pre>
+                  </article>
+
+                  {aiReview.stage === "stale" ? (
+                    <article className="ai-review-card">
+                      <h3>Current text now</h3>
+                      <pre>
+                        {currentReviewText ||
+                          "The document changed while the AI request was running. Reselect the target text before applying."}
+                      </pre>
+                    </article>
+                  ) : null}
+
+                  <article className="ai-review-card ai-review-card-editable">
+                    <h3>Proposal</h3>
+                    <textarea
+                      className="ai-proposal-textarea"
+                      value={proposalDraft}
+                      onChange={(event) => setProposalDraft(event.target.value)}
+                    />
+                  </article>
+                </div>
+
+                {suggestionSegments.length > 1 ? (
+                  <div className="ai-segments">
+                    <strong>Apply selected segments</strong>
+                    <div className="stack-list">
+                      {suggestionSegments.map((segment, index) => (
+                        <label key={`${aiReview.interaction_id}-${index}`} className="ai-segment-card">
+                          <input
+                            checked={selectedSegments.includes(index)}
+                            type="checkbox"
+                            onChange={() => toggleSegment(index)}
+                          />
+                          <span>{segment}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
+                {aiReview.stage === "stale" ? (
+                  <p className="preview-flag">
+                    This suggestion is stale. Review the current text and reselect the live target
+                    range before applying it.
+                  </p>
+                ) : null}
+
+                <div className="document-actions">
+                  <button
+                    className="primary-button"
+                    disabled={isAiResolving}
+                    type="button"
+                    onClick={() => void handleApplyAiSuggestion()}
+                  >
+                    {isAiResolving
+                      ? "Applying..."
+                      : aiReview.stage === "stale"
+                        ? "Apply to current selection"
+                        : "Apply suggestion"}
+                  </button>
+                  <button
+                    className="ghost-button"
+                    disabled={isAiResolving}
+                    type="button"
+                    onClick={() => void handleRejectAiSuggestion()}
+                  >
+                    Reject
+                  </button>
+                </div>
+              </div>
+            ) : null}
+          </section>
+        ) : (
+          <section className="ai-section">
+            <h2>AI Writing Assistant</h2>
+            <p className="muted-copy">
+              AI actions are limited to owners and editors because they can create document changes
+              that are later versioned and reviewed.
+            </p>
+          </section>
+        )}
+
         <RichTextToolbar editor={editor} disabled={!canEdit} />
         <div className="editor-surface">
           <EditorContent editor={editor} />
@@ -348,11 +958,7 @@ export function DocumentPage() {
               </p>
             </div>
             {previewVersion ? (
-              <button
-                className="ghost-link"
-                type="button"
-                onClick={() => setPreviewVersionId(null)}
-              >
+              <button className="ghost-link" type="button" onClick={() => setPreviewVersionId(null)}>
                 Clear
               </button>
             ) : null}
@@ -406,7 +1012,10 @@ export function DocumentPage() {
 
               <label className="field">
                 <span>Role</span>
-                <select value={shareRole} onChange={(event) => setShareRole(event.target.value as "editor" | "viewer")}>
+                <select
+                  value={shareRole}
+                  onChange={(event) => setShareRole(event.target.value as "editor" | "viewer")}
+                >
                   <option value="viewer">Viewer</option>
                   <option value="editor">Editor</option>
                 </select>
@@ -450,6 +1059,84 @@ export function DocumentPage() {
               ))
             )}
           </div>
+        </section>
+
+        <section className="panel">
+          <div className="preview-header">
+            <div>
+              <h2>AI history</h2>
+              <p className="muted-copy">
+                Review AI requests, their outcomes, and which saved version an accepted suggestion
+                landed in.
+              </p>
+            </div>
+          </div>
+
+          {canViewAiHistory ? (
+            <>
+              <div className="history-filter-grid">
+                <label className="field">
+                  <span>Action</span>
+                  <select
+                    value={aiHistoryActionFilter}
+                    onChange={(event) => setAiHistoryActionFilter(event.target.value)}
+                  >
+                    <option value="all">All actions</option>
+                    <option value="rewrite">Rewrite</option>
+                    <option value="summarize">Summarize</option>
+                    <option value="translate">Translate</option>
+                    <option value="restructure">Restructure</option>
+                  </select>
+                </label>
+
+                <label className="field">
+                  <span>Status</span>
+                  <select
+                    value={aiHistoryResolutionFilter}
+                    onChange={(event) => setAiHistoryResolutionFilter(event.target.value)}
+                  >
+                    <option value="all">All outcomes</option>
+                    <option value="pending-review">Pending review</option>
+                    <option value="accepted">Accepted</option>
+                    <option value="edited-before-apply">Edited before apply</option>
+                    <option value="rejected">Rejected</option>
+                    <option value="expired">Expired</option>
+                    <option value="failed">Failed</option>
+                  </select>
+                </label>
+              </div>
+
+              <div className="stack-list">
+                {isAiHistoryLoading ? (
+                  <p className="muted-copy">Loading AI history...</p>
+                ) : aiHistory.length === 0 ? (
+                  <p className="muted-copy">No AI interactions match the current filters yet.</p>
+                ) : (
+                  aiHistory.map((interaction) => (
+                    <article key={interaction.id} className="list-card">
+                      <div className="document-meta-line">
+                        <strong>{describeAiAction(interaction.action)}</strong>
+                        <span>{describeAiResolution(interaction)}</span>
+                      </div>
+                      <p>{interaction.selection_text_preview}</p>
+                      <p>
+                        Requested by {interaction.requested_by.username} on{" "}
+                        {formatTimestamp(interaction.requested_at)}
+                      </p>
+                      <p>Model: {interaction.model_id}</p>
+                      {interaction.applied_document_version_id ? (
+                        <p className="history-flag">
+                          Applied into version {interaction.applied_document_version_id.slice(0, 8)}
+                        </p>
+                      ) : null}
+                    </article>
+                  ))
+                )}
+              </div>
+            </>
+          ) : (
+            <p className="muted-copy">Only document owners can inspect AI history.</p>
+          )}
         </section>
 
         <section className="panel">
