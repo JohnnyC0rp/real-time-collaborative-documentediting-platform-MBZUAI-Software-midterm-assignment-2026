@@ -79,6 +79,10 @@ export const router = createBrowserRouter([
           </ProtectedRoute>
         )
       },
+      {
+        path: "shared/:documentId",
+        element: <DocumentPage />
+      },
       { path: "*", element: <Navigate to="/" replace /> }
     ]
   }

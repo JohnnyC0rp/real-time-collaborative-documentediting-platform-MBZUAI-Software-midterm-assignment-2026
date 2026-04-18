@@ -7,6 +7,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
 from app.collaboration import CollaborationHub
 from app.dependencies import get_json_store
 from app.errors import AppError, authentication_required
+from app.guest_access import resolve_guest_document_access
 from app.routers.documents import (
     WRITE_ROLES,
     normalize_title,
@@ -61,16 +62,46 @@ def authenticate_websocket_user(token: str | None, store: JsonStore) -> dict[str
     return user
 
 
-@router.websocket("/documents/{document_id}")
-async def collaborate_on_document(websocket: WebSocket, document_id: str) -> None:
-    store = get_json_store()
-    token = websocket.query_params.get("token")
-
-    try:
+def resolve_websocket_actor(
+    *,
+    token: str | None,
+    share_token: str | None,
+    guest_key: str | None,
+    document_id: str,
+    store: JsonStore
+) -> tuple[dict[str, Any], dict[str, Any], str]:
+    if token:
         current_user = authenticate_websocket_user(token, store)
         document, role = resolve_document_for_user(
             document_id=document_id,
             current_user=current_user,
+            store=store
+        )
+        return current_user, document, role
+
+    document, role, guest_user, _share_link = resolve_guest_document_access(
+        share_token=share_token,
+        guest_key=guest_key,
+        store=store
+    )
+    if document["id"] != document_id:
+        raise AppError(404, "NOT_FOUND", "Document not found")
+    return guest_user, document, role
+
+
+@router.websocket("/documents/{document_id}")
+async def collaborate_on_document(websocket: WebSocket, document_id: str) -> None:
+    store = get_json_store()
+    token = websocket.query_params.get("token")
+    share_token = websocket.query_params.get("share_token")
+    guest_key = websocket.query_params.get("guest_key")
+
+    try:
+        current_user, document, role = resolve_websocket_actor(
+            token=token,
+            share_token=share_token,
+            guest_key=guest_key,
+            document_id=document_id,
             store=store
         )
     except AppError:
@@ -100,6 +131,19 @@ async def collaborate_on_document(websocket: WebSocket, document_id: str) -> Non
         while True:
             message = await websocket.receive_json()
             message_type = message.get("type")
+
+            if share_token:
+                try:
+                    current_user, document, role = resolve_websocket_actor(
+                        token=None,
+                        share_token=share_token,
+                        guest_key=guest_key,
+                        document_id=document_id,
+                        store=store
+                    )
+                except AppError:
+                    await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+                    return
 
             if message_type == "ping":
                 await websocket.send_json(

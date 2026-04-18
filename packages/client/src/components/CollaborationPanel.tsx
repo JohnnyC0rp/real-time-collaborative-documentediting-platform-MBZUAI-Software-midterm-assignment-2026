@@ -38,8 +38,8 @@ export function CollaborationPanel({
         <div>
           <h2>Live collaboration</h2>
           <p className="muted-copy">
-            Authenticated document sync uses a last-write-wins WebSocket channel with reconnect and
-            presence updates.
+            Signed-in collaborators and Ghost guests share the same last-write-wins WebSocket
+            channel with reconnect and presence updates.
           </p>
         </div>
         <span className={`status-chip status-${connectionState}`}>{describeConnectionState(connectionState)}</span>
