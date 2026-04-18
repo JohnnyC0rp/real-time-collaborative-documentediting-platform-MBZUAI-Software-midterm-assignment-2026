@@ -4,6 +4,7 @@ from app.dependencies import get_current_user, get_json_store
 from app.errors import AppError
 from app.schemas import (
     CreateDocumentRequest,
+    DocumentAiInteractionResponse,
     DocumentDetailResponse,
     DocumentShareResponse,
     DocumentsResponse,
@@ -88,6 +89,26 @@ def to_version_response(version: dict, store: JsonStore) -> DocumentVersionRespo
     )
 
 
+def to_ai_interaction_response(interaction: dict, store: JsonStore) -> DocumentAiInteractionResponse:
+    requested_by = to_public_user(store.get_user_by_id(interaction["requested_by_user_id"]))
+    return DocumentAiInteractionResponse(
+        id=interaction["id"],
+        feature=interaction["feature"],
+        requested_at=interaction["requested_at"],
+        requested_by=requested_by,
+        selection_mode=interaction["selection_mode"],
+        tone=interaction.get("tone"),
+        output_length=interaction.get("output_length"),
+        original_text=interaction["original_text"],
+        prompt_text=interaction["prompt_text"],
+        model=interaction["model"],
+        response_text=interaction.get("response_text", ""),
+        status=interaction["status"],
+        error_message=interaction.get("error_message"),
+        decided_at=interaction.get("decided_at")
+    )
+
+
 def to_document_summary(document: dict, role: str, store: JsonStore) -> DocumentSummaryResponse:
     owner = to_public_user(store.get_user_by_id(document["owner_id"]))
     return DocumentSummaryResponse(
@@ -108,11 +129,16 @@ def to_document_detail(document: dict, role: str, store: JsonStore) -> DocumentD
         to_version_response(version, store)
         for version in reversed(document["versions"])
     ]
+    ai_history = [
+        to_ai_interaction_response(interaction, store)
+        for interaction in document.get("ai_history", [])
+    ]
     return DocumentDetailResponse(
         **summary.model_dump(),
         content=document["content"],
         shares=shares,
-        versions=versions
+        versions=versions,
+        ai_history=ai_history
     )
 
 

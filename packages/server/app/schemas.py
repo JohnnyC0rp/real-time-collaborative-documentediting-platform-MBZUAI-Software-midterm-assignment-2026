@@ -65,6 +65,19 @@ class RestoreVersionRequest(BaseModel):
     version_id: str = Field(min_length=1, max_length=64)
 
 
+class GenerateAiSuggestionRequest(BaseModel):
+    feature: Literal["rewrite", "summarize", "fix_grammar"]
+    document_content: str = Field(min_length=1, max_length=250_000)
+    selected_text: str | None = Field(default=None, max_length=20_000)
+    tone: Literal["clear", "formal", "friendly"] | None = None
+    output_length: Literal["short", "medium", "long"] | None = None
+    base_updated_at: datetime
+
+
+class UpdateAiInteractionStatusRequest(BaseModel):
+    status: Literal["accepted", "rejected"]
+
+
 class DocumentShareResponse(BaseModel):
     id: str
     user_id: str
@@ -84,6 +97,23 @@ class DocumentVersionResponse(BaseModel):
     restored_from_version_id: str | None
 
 
+class DocumentAiInteractionResponse(BaseModel):
+    id: str
+    feature: Literal["rewrite", "summarize", "fix_grammar"]
+    requested_at: datetime
+    requested_by: PublicUserResponse
+    selection_mode: Literal["selection", "document_excerpt"]
+    tone: Literal["clear", "formal", "friendly"] | None
+    output_length: Literal["short", "medium", "long"] | None
+    original_text: str
+    prompt_text: str
+    model: str
+    response_text: str
+    status: Literal["streaming", "completed", "accepted", "rejected", "canceled", "error"]
+    error_message: str | None
+    decided_at: datetime | None
+
+
 class DocumentSummaryResponse(BaseModel):
     id: str
     title: str
@@ -98,6 +128,7 @@ class DocumentDetailResponse(DocumentSummaryResponse):
     content: str
     shares: list[DocumentShareResponse]
     versions: list[DocumentVersionResponse]
+    ai_history: list[DocumentAiInteractionResponse]
 
 
 class DocumentsResponse(BaseModel):

@@ -18,6 +18,7 @@ backend, and shared TypeScript contracts for the browser-facing data model.
 - Auto-save with visible status feedback.
 - Share management with `owner`, `editor`, and `viewer` roles.
 - Version history with one-click restore.
+- Writing assistant support for rewrite, summarize, and grammar cleanup with streamed suggestions and per-document history.
 
 ## Stack
 
@@ -78,6 +79,8 @@ npm run dev:client
 
 The backend listens on `http://localhost:8000`, and FastAPI serves interactive
 API documentation at `http://localhost:8000/docs`.
+
+The AI assistant defaults to `AI_PROVIDER=mock`, so Part 3 works locally without a live model. To point it at a real model later, switch `AI_PROVIDER` to `openai_compat`, set `AI_BASE_URL`, and provide `AI_MODEL` plus `AI_API_KEY` if your endpoint needs one. The Part 3 implementation notes live in `docs/part3-ai-assistant.md`.
 
 ## Validation
 

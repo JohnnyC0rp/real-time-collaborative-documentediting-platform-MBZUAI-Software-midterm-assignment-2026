@@ -18,6 +18,13 @@ class Settings(BaseSettings):
     refresh_cookie_name: str = "collab_refresh_token"
     secure_cookies: bool = False
     data_file: Path = REPO_ROOT / "packages/server/data/app-data.json"
+    ai_provider: str = "mock"
+    ai_model: str = "mock-local"
+    ai_base_url: str = "http://localhost:1234/v1"
+    ai_api_key: str | None = None
+    ai_prompt_file: Path = REPO_ROOT / "packages/server/app/ai_prompts.json"
+    ai_max_source_chars: int = 2400
+    ai_max_context_chars: int = 800
 
     model_config = SettingsConfigDict(
         env_file=str(REPO_ROOT / ".env"),
@@ -28,6 +35,15 @@ class Settings(BaseSettings):
     @field_validator("data_file", mode="before")
     @classmethod
     def resolve_data_file(cls, value: str | Path) -> Path:
+        candidate = Path(value)
+        if candidate.is_absolute():
+            return candidate
+
+        return REPO_ROOT / candidate
+
+    @field_validator("ai_prompt_file", mode="before")
+    @classmethod
+    def resolve_ai_prompt_file(cls, value: str | Path) -> Path:
         candidate = Path(value)
         if candidate.is_absolute():
             return candidate
