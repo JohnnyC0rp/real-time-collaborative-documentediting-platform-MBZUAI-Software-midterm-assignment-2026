@@ -1,4 +1,5 @@
 import json
+import secrets
 from functools import lru_cache
 from pathlib import Path
 from threading import Lock
@@ -9,6 +10,10 @@ from uuid import uuid4
 from app.config import get_settings
 
 StoreMutationResult = TypeVar("StoreMutationResult")
+
+
+class StoreConflictError(ValueError):
+    pass
 
 
 class JsonStore:
@@ -26,7 +31,8 @@ class JsonStore:
             "users": [],
             "documents": [],
             "refresh_sessions": [],
-            "ai_interactions": []
+            "ai_interactions": [],
+            "guest_identities": []
         }
 
     def _read_state(self) -> dict[str, list[dict[str, Any]]]:
@@ -38,6 +44,13 @@ class JsonStore:
         state.setdefault("documents", [])
         state.setdefault("refresh_sessions", [])
         state.setdefault("ai_interactions", [])
+        state.setdefault("guest_identities", [])
+        for user in state["users"]:
+            user.setdefault("is_guest", False)
+        for document in state["documents"]:
+            document.setdefault("shares", [])
+            document.setdefault("share_links", [])
+            document.setdefault("versions", [])
         return state
 
     def _write_state(self, state: dict[str, list[dict[str, Any]]]) -> None:
@@ -66,6 +79,7 @@ class JsonStore:
             (
                 user
                 for user in state["users"]
+                if not user.get("is_guest")
                 if user["username"].casefold() == needle or user["email"].casefold() == needle
             ),
             None
@@ -93,16 +107,17 @@ class JsonStore:
         def mutation(state: dict[str, list[dict[str, Any]]]) -> dict[str, Any]:
             for existing_user in state["users"]:
                 if existing_user["email"].casefold() == normalized_email.casefold():
-                    raise ValueError("Email already in use")
+                    raise StoreConflictError("Email already in use")
                 if existing_user["username"].casefold() == normalized_username.casefold():
-                    raise ValueError("Username already in use")
+                    raise StoreConflictError("Username already in use")
 
             user = {
                 "id": str(uuid4()),
                 "username": normalized_username,
                 "email": normalized_email,
                 "password_hash": password_hash,
-                "created_at": created_at
+                "created_at": created_at,
+                "is_guest": False
             }
             state["users"].append(user)
             return user
@@ -373,6 +388,7 @@ class JsonStore:
             "updated_at": created_at,
             "deleted_at": None,
             "shares": [],
+            "share_links": [],
             "versions": [
                 {
                     "id": str(uuid4()),
@@ -389,6 +405,122 @@ class JsonStore:
         def mutation(state: dict[str, list[dict[str, Any]]]) -> dict[str, Any]:
             state["documents"].append(document)
             return deepcopy(document)
+
+        return self._mutate(mutation)
+
+    def create_share_link(
+        self,
+        *,
+        document_id: str,
+        role: str,
+        created_at: str
+    ) -> dict[str, Any] | None:
+        def mutation(state: dict[str, list[dict[str, Any]]]) -> dict[str, Any] | None:
+            for document in state["documents"]:
+                if document["id"] != document_id or document["deleted_at"] is not None:
+                    continue
+
+                for share_link in document["share_links"]:
+                    if share_link["role"] == role and share_link["revoked_at"] is None:
+                        share_link["revoked_at"] = created_at
+
+                share_link = {
+                    "id": str(uuid4()),
+                    "token": secrets.token_urlsafe(24),
+                    "role": role,
+                    "created_at": created_at,
+                    "revoked_at": None
+                }
+                document["share_links"].append(share_link)
+                document["updated_at"] = created_at
+                return deepcopy(share_link)
+
+            return None
+
+        return self._mutate(mutation)
+
+    def revoke_share_link(self, document_id: str, share_link_id: str, revoked_at: str) -> bool:
+        def mutation(state: dict[str, list[dict[str, Any]]]) -> bool:
+            for document in state["documents"]:
+                if document["id"] != document_id or document["deleted_at"] is not None:
+                    continue
+
+                for share_link in document["share_links"]:
+                    if share_link["id"] == share_link_id and share_link["revoked_at"] is None:
+                        share_link["revoked_at"] = revoked_at
+                        document["updated_at"] = revoked_at
+                        return True
+            return False
+
+        return self._mutate(mutation)
+
+    def get_document_by_share_token(
+        self,
+        share_token: str
+    ) -> tuple[dict[str, Any], dict[str, Any]] | None:
+        state = self._read_state()
+        for document in state["documents"]:
+            if document["deleted_at"] is not None:
+                continue
+            for share_link in document["share_links"]:
+                if share_link["token"] == share_token and share_link["revoked_at"] is None:
+                    return deepcopy(document), deepcopy(share_link)
+        return None
+
+    def ensure_guest_identity(
+        self,
+        *,
+        share_link_id: str,
+        guest_key: str,
+        created_at: str
+    ) -> dict[str, Any]:
+        def mutation(state: dict[str, list[dict[str, Any]]]) -> dict[str, Any]:
+            for guest_identity in state["guest_identities"]:
+                if (
+                    guest_identity["share_link_id"] == share_link_id
+                    and guest_identity["guest_key"] == guest_key
+                ):
+                    guest_identity["last_seen_at"] = created_at
+                    user = next(
+                        (
+                            existing_user
+                            for existing_user in state["users"]
+                            if existing_user["id"] == guest_identity["user_id"]
+                        ),
+                        None
+                    )
+                    if user is None:
+                        raise RuntimeError("Guest identity user is missing")
+                    return deepcopy(user)
+
+            ghost_number = (
+                sum(
+                    1
+                    for guest_identity in state["guest_identities"]
+                    if guest_identity["share_link_id"] == share_link_id
+                )
+                + 1
+            )
+            guest_user = {
+                "id": str(uuid4()),
+                "username": f"Ghost #{ghost_number}",
+                "email": f"ghost-{share_link_id[:8]}-{ghost_number}@example.com",
+                "password_hash": "",
+                "created_at": created_at,
+                "is_guest": True
+            }
+            state["users"].append(guest_user)
+            state["guest_identities"].append(
+                {
+                    "id": str(uuid4()),
+                    "share_link_id": share_link_id,
+                    "guest_key": guest_key,
+                    "user_id": guest_user["id"],
+                    "created_at": created_at,
+                    "last_seen_at": created_at
+                }
+            )
+            return deepcopy(guest_user)
 
         return self._mutate(mutation)
 
