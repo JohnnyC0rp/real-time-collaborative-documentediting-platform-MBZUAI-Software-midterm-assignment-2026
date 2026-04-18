@@ -61,6 +61,10 @@ class ShareDocumentRequest(BaseModel):
     role: Literal["editor", "viewer"]
 
 
+class CreateShareLinkRequest(BaseModel):
+    role: Literal["editor", "viewer"]
+
+
 class RestoreVersionRequest(BaseModel):
     version_id: str = Field(min_length=1, max_length=64)
 
@@ -85,6 +89,14 @@ class DocumentShareResponse(BaseModel):
     email: EmailStr
     role: Literal["editor", "viewer"]
     granted_at: datetime
+
+
+class DocumentShareLinkResponse(BaseModel):
+    id: str
+    token: str
+    role: Literal["editor", "viewer"]
+    created_at: datetime
+    revoked_at: datetime | None
 
 
 class DocumentVersionResponse(BaseModel):
@@ -127,6 +139,7 @@ class DocumentSummaryResponse(BaseModel):
 class DocumentDetailResponse(DocumentSummaryResponse):
     content: str
     shares: list[DocumentShareResponse]
+    share_links: list[DocumentShareLinkResponse]
     versions: list[DocumentVersionResponse]
     ai_history: list[DocumentAiInteractionResponse]
 
@@ -137,6 +150,16 @@ class DocumentsResponse(BaseModel):
 
 class SuccessResponse(BaseModel):
     success: bool = True
+
+
+class GuestAccessSessionRequest(BaseModel):
+    guest_key: str = Field(min_length=8, max_length=128)
+
+
+class GuestAccessSessionResponse(BaseModel):
+    actor: PublicUserResponse
+    role: Literal["editor", "viewer"]
+    document: DocumentDetailResponse
 
 
 class AiSelectionRequest(BaseModel):

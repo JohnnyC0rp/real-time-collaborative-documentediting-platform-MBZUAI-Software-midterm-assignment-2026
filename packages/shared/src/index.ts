@@ -74,6 +74,14 @@ export interface DocumentShare {
   granted_at: string;
 }
 
+export interface DocumentShareLink {
+  id: string;
+  token: string;
+  role: Exclude<AccessRole, "owner">;
+  created_at: string;
+  revoked_at: string | null;
+}
+
 export interface DocumentVersion {
   id: string;
   title: string;
@@ -120,6 +128,7 @@ export interface DocumentAiInteraction {
 export interface DocumentDetail extends DocumentSummary {
   content: string;
   shares: DocumentShare[];
+  share_links: DocumentShareLink[];
   versions: DocumentVersion[];
   ai_history: DocumentAiInteraction[];
 }
@@ -154,6 +163,10 @@ export interface ShareDocumentRequest {
   role: Exclude<AccessRole, "owner">;
 }
 
+export interface CreateShareLinkRequest {
+  role: Exclude<AccessRole, "owner">;
+}
+
 export interface UpdateShareRequest {
   role: Exclude<AccessRole, "owner">;
 }
@@ -177,6 +190,16 @@ export interface UpdateAiInteractionStatusRequest {
 
 export interface SuccessResponse {
   success: true;
+}
+
+export interface GuestAccessSessionRequest {
+  guest_key: string;
+}
+
+export interface GuestAccessSession {
+  actor: Pick<UserProfile, "id" | "username" | "email">;
+  role: Exclude<AccessRole, "owner">;
+  document: DocumentDetail;
 }
 
 export interface AiSelectionPayload {

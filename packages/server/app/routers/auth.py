@@ -21,7 +21,7 @@ from app.security import (
     utc_now,
     verify_password
 )
-from app.store import JsonStore
+from app.store import JsonStore, StoreConflictError
 
 router = APIRouter(prefix="/api/auth", tags=["authentication"])
 
@@ -101,7 +101,7 @@ def register(
             password_hash=hash_password(payload.password),
             created_at=utc_now().isoformat()
         )
-    except ValueError as exc:
+    except StoreConflictError as exc:
         raise AppError(409, "CONFLICT", str(exc)) from exc
 
     return build_session_response(user=user, response=response, store=store)

@@ -3,10 +3,12 @@ from fastapi import APIRouter, Depends, status
 from app.dependencies import get_current_user, get_json_store
 from app.errors import AppError
 from app.schemas import (
+    CreateShareLinkRequest,
     CreateDocumentRequest,
     DocumentAiInteractionResponse,
     DocumentDetailResponse,
     DocumentShareResponse,
+    DocumentShareLinkResponse,
     DocumentsResponse,
     DocumentSummaryResponse,
     DocumentVersionResponse,
@@ -76,6 +78,16 @@ def to_share_response(share: dict, store: JsonStore) -> DocumentShareResponse:
     )
 
 
+def to_share_link_response(share_link: dict) -> DocumentShareLinkResponse:
+    return DocumentShareLinkResponse(
+        id=share_link["id"],
+        token=share_link["token"],
+        role=share_link["role"],
+        created_at=share_link["created_at"],
+        revoked_at=share_link["revoked_at"]
+    )
+
+
 def to_version_response(version: dict, store: JsonStore) -> DocumentVersionResponse:
     created_by = to_public_user(store.get_user_by_id(version["created_by_user_id"]))
     return DocumentVersionResponse(
@@ -122,9 +134,20 @@ def to_document_summary(document: dict, role: str, store: JsonStore) -> Document
     )
 
 
-def to_document_detail(document: dict, role: str, store: JsonStore) -> DocumentDetailResponse:
+def to_document_detail(
+    document: dict,
+    role: str,
+    store: JsonStore,
+    *,
+    include_share_links: bool = False
+) -> DocumentDetailResponse:
     summary = to_document_summary(document, role, store)
     shares = [to_share_response(share, store) for share in document["shares"]]
+    share_links = (
+        [to_share_link_response(share_link) for share_link in document.get("share_links", [])]
+        if include_share_links
+        else []
+    )
     versions = [
         to_version_response(version, store)
         for version in reversed(document["versions"])
@@ -137,6 +160,7 @@ def to_document_detail(document: dict, role: str, store: JsonStore) -> DocumentD
         **summary.model_dump(),
         content=document["content"],
         shares=shares,
+        share_links=share_links,
         versions=versions,
         ai_history=ai_history
     )
@@ -167,7 +191,7 @@ def create_document(
         title=normalize_title(payload.title),
         created_at=utc_now().isoformat()
     )
-    return to_document_detail(document, "owner", store)
+    return to_document_detail(document, "owner", store, include_share_links=True)
 
 
 @router.get("/{document_id}", response_model=DocumentDetailResponse)
@@ -181,7 +205,7 @@ def get_document(
         current_user=current_user,
         store=store
     )
-    return to_document_detail(document, role, store)
+    return to_document_detail(document, role, store, include_share_links=role == "owner")
 
 
 @router.put("/{document_id}", response_model=DocumentDetailResponse)
@@ -213,7 +237,7 @@ def update_document(
     if updated is None:
         raise AppError(404, "NOT_FOUND", "Document not found")
 
-    return to_document_detail(updated, role, store)
+    return to_document_detail(updated, role, store, include_share_links=role == "owner")
 
 
 @router.delete("/{document_id}", response_model=SuccessResponse)
@@ -269,7 +293,7 @@ def share_document(
     if refreshed_document is None:
         raise AppError(404, "NOT_FOUND", "Document not found")
 
-    return to_document_detail(refreshed_document, role, store)
+    return to_document_detail(refreshed_document, role, store, include_share_links=role == "owner")
 
 
 @router.delete("/{document_id}/shares/{share_id}", response_model=DocumentDetailResponse)
@@ -294,7 +318,61 @@ def remove_share(
     if refreshed_document is None:
         raise AppError(404, "NOT_FOUND", "Document not found")
 
-    return to_document_detail(refreshed_document, role, store)
+    return to_document_detail(refreshed_document, role, store, include_share_links=role == "owner")
+
+
+@router.post("/{document_id}/share-links", response_model=DocumentDetailResponse)
+def create_share_link(
+    document_id: str,
+    payload: CreateShareLinkRequest,
+    current_user: dict = Depends(get_current_user),
+    store: JsonStore = Depends(get_json_store)
+) -> DocumentDetailResponse:
+    document, role = resolve_document_for_user(
+        document_id=document_id,
+        current_user=current_user,
+        store=store
+    )
+    require_role(role, {"owner"}, "Only the owner can create share links")
+
+    created_link = store.create_share_link(
+        document_id=document["id"],
+        role=payload.role,
+        created_at=utc_now().isoformat()
+    )
+    if created_link is None:
+        raise AppError(404, "NOT_FOUND", "Document not found")
+
+    refreshed_document = store.get_document_by_id(document_id)
+    if refreshed_document is None:
+        raise AppError(404, "NOT_FOUND", "Document not found")
+
+    return to_document_detail(refreshed_document, role, store, include_share_links=True)
+
+
+@router.delete("/{document_id}/share-links/{share_link_id}", response_model=DocumentDetailResponse)
+def revoke_share_link(
+    document_id: str,
+    share_link_id: str,
+    current_user: dict = Depends(get_current_user),
+    store: JsonStore = Depends(get_json_store)
+) -> DocumentDetailResponse:
+    document, role = resolve_document_for_user(
+        document_id=document_id,
+        current_user=current_user,
+        store=store
+    )
+    require_role(role, {"owner"}, "Only the owner can revoke share links")
+
+    was_revoked = store.revoke_share_link(document["id"], share_link_id, utc_now().isoformat())
+    if not was_revoked:
+        raise AppError(404, "NOT_FOUND", "Share link not found")
+
+    refreshed_document = store.get_document_by_id(document_id)
+    if refreshed_document is None:
+        raise AppError(404, "NOT_FOUND", "Document not found")
+
+    return to_document_detail(refreshed_document, role, store, include_share_links=True)
 
 
 @router.post("/{document_id}/versions/restore", response_model=DocumentDetailResponse)
@@ -320,4 +398,4 @@ def restore_version(
     if restored is None:
         raise AppError(404, "NOT_FOUND", "Version not found")
 
-    return to_document_detail(restored, role, store)
+    return to_document_detail(restored, role, store, include_share_links=role == "owner")
