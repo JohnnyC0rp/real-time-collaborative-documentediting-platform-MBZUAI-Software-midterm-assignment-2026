@@ -9,7 +9,6 @@ import { EditorContent, useEditor, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { AiAssistantPanel } from "../components/AiAssistantPanel";
 import { RichTextToolbar } from "../components/RichTextToolbar";
 import { RoleBadge } from "../components/RoleBadge";
 import { listAiHistory, resolveAiInteraction, streamAiAction } from "../lib/ai";
@@ -1043,14 +1042,6 @@ export function DocumentPage() {
       </section>
 
       <aside className="sidebar-stack">
-        <AiAssistantPanel
-          canEdit={canEdit}
-          document={document}
-          editor={editor}
-          onDocumentSaved={applyDocument}
-          title={title}
-        />
-
         <section className="panel">
           <div className="preview-header">
             <div>
