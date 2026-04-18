@@ -276,11 +276,18 @@ textarea {
   color: #a61b1b;
 }
 
-.editor-layout {
+.document-workspace {
   display: grid;
-  grid-template-columns: minmax(0, 1.7fr) minmax(280px, 0.95fr);
+  grid-template-columns:
+    minmax(250px, 0.78fr)
+    minmax(0, 1.55fr)
+    minmax(300px, 0.95fr);
   gap: 20px;
   align-items: start;
+}
+
+.document-main-column {
+  margin-top: 0;
 }
 
 .document-header {
@@ -475,6 +482,12 @@ textarea {
   gap: 20px;
 }
 
+.sidebar-left,
+.sidebar-right {
+  position: sticky;
+  top: 24px;
+}
+
 .preview-header {
   justify-content: space-between;
   align-items: flex-start;
@@ -658,10 +671,18 @@ textarea {
   }
 
   .create-document-row,
-  .editor-layout,
   .document-header {
     grid-template-columns: 1fr;
     flex-direction: column;
+  }
+
+  .document-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar-left,
+  .sidebar-right {
+    position: static;
   }
 
   .ai-form-grid,

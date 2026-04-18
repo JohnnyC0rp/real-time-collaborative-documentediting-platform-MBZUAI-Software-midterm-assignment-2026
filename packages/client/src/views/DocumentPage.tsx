@@ -1096,8 +1096,35 @@ export function DocumentPage() {
     : null;
 
   return (
-    <div className="editor-layout">
-      <section className="panel">
+    <div className="document-workspace">
+      <aside className="sidebar-stack sidebar-left">
+        <CollaborationPanel
+          connectionState={collaborationState}
+          currentUserId={currentUserId}
+          presence={collaborationPresence}
+        />
+
+        <ShareAccessPanel
+          canManageShares={Boolean(canManageShares)}
+          copyStatusMessage={shareLinkStatusMessage}
+          document={document}
+          isCreatingLinkRole={creatingShareLinkRole}
+          isGuestAccess={Boolean(guestSession)}
+          isRevokingLinkId={revokingShareLinkId}
+          isSharing={isSharing}
+          onCopyLink={handleCopyShareLink}
+          onCreateLink={(role) => void handleCreateShareLink(role)}
+          onRemoveShare={(shareId) => void handleRemoveShare(shareId)}
+          onRevokeLink={(shareLinkId) => void handleRevokeShareLink(shareLinkId)}
+          onShareIdentifierChange={setShareIdentifier}
+          onShareRoleChange={setShareRole}
+          onSubmitShare={handleShare}
+          shareIdentifier={shareIdentifier}
+          shareRole={shareRole}
+        />
+      </aside>
+
+      <section className="panel document-main-column">
         <div className="document-header">
           <div>
             <div className="document-meta-line">
@@ -1343,13 +1370,7 @@ export function DocumentPage() {
         </div>
       </section>
 
-      <aside className="sidebar-stack">
-        <CollaborationPanel
-          connectionState={collaborationState}
-          currentUserId={currentUserId}
-          presence={collaborationPresence}
-        />
-
+      <aside className="sidebar-stack sidebar-right">
         <section className="panel">
           <div className="preview-header">
             <div>
@@ -1398,25 +1419,6 @@ export function DocumentPage() {
             </p>
           )}
         </section>
-
-        <ShareAccessPanel
-          canManageShares={Boolean(canManageShares)}
-          copyStatusMessage={shareLinkStatusMessage}
-          document={document}
-          isCreatingLinkRole={creatingShareLinkRole}
-          isGuestAccess={Boolean(guestSession)}
-          isRevokingLinkId={revokingShareLinkId}
-          isSharing={isSharing}
-          onCopyLink={handleCopyShareLink}
-          onCreateLink={(role) => void handleCreateShareLink(role)}
-          onRemoveShare={(shareId) => void handleRemoveShare(shareId)}
-          onRevokeLink={(shareLinkId) => void handleRevokeShareLink(shareLinkId)}
-          onShareIdentifierChange={setShareIdentifier}
-          onShareRoleChange={setShareRole}
-          onSubmitShare={handleShare}
-          shareIdentifier={shareIdentifier}
-          shareRole={shareRole}
-        />
 
         <section className="panel">
           <div className="preview-header">
