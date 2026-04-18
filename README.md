@@ -1,108 +1,166 @@
 # Collaborative Document Editor
 
-This repository contains the core application for the AI1220 collaborative
-document editor assignment. The application uses a React frontend, a FastAPI
-backend, and shared TypeScript contracts for the browser-facing data model.
+This repository contains the final implementation of the AI1220 collaborative
+document editor assignment. The application is a React plus TypeScript frontend,
+a FastAPI backend, and a shared contract package for browser-facing types.
 
-## What the application provides
+## Features
 
-- Secure registration and login with bcrypt-hashed passwords.
-- Short-lived JWT access tokens with refresh-cookie based silent
-  re-authentication.
-- Protected document routes in the frontend and server-side access checks in the
-  backend.
-- Document CRUD with ownership metadata and a dashboard that lists every
-  document the signed-in user can access.
+- Registration, login, access-token rotation, and silent refresh via an
+  HTTP-only refresh cookie.
+- Protected dashboard and document routes with server-side authorization on
+  every document and AI endpoint.
+- Document CRUD, sharing with `owner`, `editor`, and `viewer` roles, auto-save,
+  version history, and restore.
 - Rich-text editing with headings, bold, italic, ordered lists, bullet lists,
   and code blocks.
-- Selection-scoped AI actions for rewrite, summarize, translate, and
-  restructure, returned as review-first suggestions instead of silent edits.
-- Auto-save with visible status feedback.
-- Share management with `owner`, `editor`, and `viewer` roles.
-- Version history with one-click restore.
-- AI interaction history with request status, final outcome, and applied
-  version linkage for owners.
+- Real-time collaboration over authenticated WebSockets with presence, activity
+  awareness, reconnection, and last-write-wins reconciliation.
+- AI rewrite, summarize, translate, and restructure actions streamed with SSE,
+  plus compare/apply/reject/edit review flow, cancellation, undo-after-apply,
+  prompt configuration, provider abstraction, and per-document history.
+- Automated backend and frontend tests for the core auth, document, AI, and
+  collaboration flows required by the assignment baseline.
 
 ## Stack
 
-- Frontend: React, React Router, Vite, Tiptap
-- Backend: FastAPI, PyJWT, pwdlib
-- Persistence: JSON file storage inside `packages/server/data`
-- AI provider: local fallback by default, optional OpenAI or Gemini provider
-  via environment variables
+- Frontend: React, React Router, Vite, Tiptap, Vitest, React Testing Library
+- Backend: FastAPI, PyJWT, pwdlib, pytest
+- Persistence: JSON file storage in `packages/server/data`
+- Live sync: WebSocket document channel
+- AI streaming: SSE from FastAPI `StreamingResponse`
+- AI providers: local fallback, OpenAI-compatible API, or Gemini
 
-## Repository layout
+## Repository Layout
 
 ```text
 .
+├── DEVIATIONS.md
 ├── docs
-│   └── original-instructions
+│   └── part3-ai-assistant.md
+├── logs
 ├── packages
 │   ├── client
-│   │   └── src
-│   │       ├── components
-│   │       ├── context
-│   │       ├── lib
-│   │       └── views
 │   ├── server
-│   │   ├── app
-│   │   │   └── routers
-│   │   └── data
 │   └── shared
-│       └── src
 ├── .env.example
-└── package.json
+├── package.json
+└── run.sh
 ```
 
-## Local setup
+## Setup
 
-1. Install JavaScript dependencies:
+1. Install workspace dependencies:
 
-```bash
-npm install
-```
+   ```bash
+   npm install
+   ```
 
 2. Create a local environment file:
 
+   ```bash
+   cp .env.example .env
+   ```
+
+3. Keep `AI_PROVIDER=local` for an offline baseline, or configure one of:
+   - `AI_PROVIDER=openai` with `OPENAI_API_KEY` and `OPENAI_MODEL`
+   - `AI_PROVIDER=gemini` with `GEMINI_API_KEY` and `GEMINI_MODEL`
+
+## Run Locally
+
+Start both apps with one command:
+
 ```bash
-cp .env.example .env
+./run.sh
 ```
 
-The default `AI_PROVIDER=local` mode works offline and is useful for validating
-the UX and state transitions. For model-backed suggestions, switch
-`AI_PROVIDER=openai` and set `OPENAI_API_KEY` plus `OPENAI_MODEL` in `.env`, or
-switch to `AI_PROVIDER=gemini` and set `GEMINI_API_KEY` plus `GEMINI_MODEL`.
+The script writes logs to `logs/software-ass2-backend.log` and
+`logs/software-ass2-frontend.log`.
 
-3. Start the FastAPI backend:
+Useful URLs:
+
+- Frontend: [http://localhost:5173](http://localhost:5173)
+- Backend: [http://localhost:8000](http://localhost:8000)
+- FastAPI docs: [http://localhost:8000/docs](http://localhost:8000/docs)
+
+You can still run each process separately when needed:
 
 ```bash
 npm run dev:server
-```
-
-4. In another terminal, start the React client:
-
-```bash
 npm run dev:client
 ```
 
-5. Open the application at [http://localhost:5173](http://localhost:5173).
+## Testing and Validation
 
-The backend listens on `http://localhost:8000`, and FastAPI serves interactive
-API documentation at `http://localhost:8000/docs`.
+Run the full assignment test suite:
 
-## Validation
+```bash
+npm test
+```
 
-Run the monorepo verification command:
+Run build and type/compile checks:
 
 ```bash
 npm run check
 ```
 
-This checks the shared TypeScript contracts, builds the React frontend, and
-compiles the FastAPI backend package.
+Package-specific commands:
 
-## Security note
+```bash
+npm run test:server
+npm run test:client
+```
+
+## Architecture Overview
+
+### Authentication and Sessions
+
+- Passwords are hashed with bcrypt through `pwdlib`.
+- Login and registration issue a short-lived access token plus a refresh token
+  stored in an HTTP-only cookie.
+- The frontend keeps the access token in memory and retries one refresh cycle
+  before surfacing an auth failure.
+
+### Documents and Versioning
+
+- The backend stores users, documents, shares, versions, refresh sessions, and
+  AI interaction records in one JSON file.
+- Every document change appends a version entry with provenance such as
+  `initial`, `autosave`, `manual-update`, or `restore`.
+- Owners manage shares and deletion; editors can modify content and invoke AI;
+  viewers stay read-only even if they craft direct API requests.
+
+### Real-Time Collaboration
+
+- Each open document creates an authenticated WebSocket connection to
+  `/api/collaboration/documents/{document_id}`.
+- The server sends a `snapshot` on join, `presence` updates when participants
+  connect or show activity, `ack` for accepted local writes, and
+  `document.updated` for remote writes.
+- The baseline sync strategy is last-write-wins. When a client reconnects with
+  unsynced local edits, it keeps the local editor state and flushes the latest
+  pending update after the server snapshot arrives.
+
+### AI Flow
+
+- AI requests are scoped to the current selection plus bounded before/after
+  context and a small outline summary instead of the entire document.
+- Prompt templates live in `packages/server/app/ai/prompts/`.
+- The server streams accepted, token-chunk, and final result events over SSE.
+- The client keeps every AI result review-first until the user applies,
+  edits-before-apply, rejects, or undoes it.
+- During collaboration, the UI marks a suggestion as stale if the target text
+  changed while generation was running.
+
+## Documentation
+
+- `DEVIATIONS.md` records architecture changes and simplifications relative to
+  the earlier design direction.
+- `docs/part3-ai-assistant.md` explains the AI assistant behavior in more
+  detail.
+
+## Security Note
 
 Do not commit real credentials, API keys, or personal secrets. Keep `.env`
 local, use `.env.example` as the placeholder template, and rotate any secret if
-it was ever exposed by mistake.
+it was exposed by mistake.

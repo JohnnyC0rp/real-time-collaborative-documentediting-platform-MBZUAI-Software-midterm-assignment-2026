@@ -8,11 +8,15 @@
     "packages/shared"
   ],
   "scripts": {
+    "run": "bash ./run.sh",
     "dev:server": "npm run dev --workspace @collab/server",
     "dev:client": "npm run dev --workspace @collab/client",
     "check:shared": "npm run check --workspace @collab/shared",
     "check:client": "npm run check --workspace @collab/client",
     "check:server": "npm run check --workspace @collab/server",
-    "check": "npm run check:shared && npm run check:client && npm run check:server"
+    "check": "npm run check:shared && npm run check:client && npm run check:server",
+    "test:client": "npm run test --workspace @collab/client",
+    "test:server": "npm run test --workspace @collab/server",
+    "test": "npm run test:server && npm run test:client"
   }
 }
