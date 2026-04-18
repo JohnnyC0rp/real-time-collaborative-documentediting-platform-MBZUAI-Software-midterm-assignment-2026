@@ -38,6 +38,7 @@ def collaboration_document_payload(document: dict[str, Any], store: JsonStore) -
         "content": document["content"],
         "updated_at": document["updated_at"],
         "version_id": get_current_document_version_id(document),
+        "merge_strategy": document.get("_merge_strategy", "direct"),
         "latest_version": (
             to_version_response(latest_version, store).model_dump(mode="json")
             if latest_version is not None
@@ -158,7 +159,14 @@ async def collaborate_on_document(websocket: WebSocket, document_id: str) -> Non
                 continue
 
             if message_type == "activity":
-                await hub.touch(document_id, connection.id, utc_now().isoformat())
+                await hub.touch(
+                    document_id,
+                    connection.id,
+                    utc_now().isoformat(),
+                    selection_from=message.get("selection_from"),
+                    selection_to=message.get("selection_to"),
+                    selection_preview=message.get("selection_preview")
+                )
                 await hub.send_presence(document_id)
                 continue
 
@@ -189,6 +197,9 @@ async def collaborate_on_document(websocket: WebSocket, document_id: str) -> Non
                 document_id=document_id,
                 title=title,
                 content=content,
+                base_version_id=message.get("base_version_id"),
+                base_title=message.get("base_title"),
+                base_content=message.get("base_content"),
                 updated_at=updated_at,
                 updated_by_user_id=current_user["id"],
                 source="autosave"
@@ -205,7 +216,14 @@ async def collaborate_on_document(websocket: WebSocket, document_id: str) -> Non
 
             document = updated_document
             active_at = utc_now().isoformat()
-            await hub.touch(document_id, connection.id, active_at)
+            await hub.touch(
+                document_id,
+                connection.id,
+                active_at,
+                selection_from=message.get("selection_from"),
+                selection_to=message.get("selection_to"),
+                selection_preview=message.get("selection_preview")
+            )
 
             await websocket.send_json(
                 {

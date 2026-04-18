@@ -1,5 +1,6 @@
 import type {
   CollaborationAckEvent,
+  CollaborationActivityMessage,
   CollaborationConnectionState,
   CollaborationDocumentUpdateMessage,
   CollaborationPresenceEvent,
@@ -119,8 +120,11 @@ export class DocumentCollaborationSession {
     this.updateConnectionState("disconnected");
   }
 
-  sendActivity() {
-    this.sendMessage({ type: "activity" });
+  sendActivity(selection?: Omit<CollaborationActivityMessage, "type">) {
+    this.sendMessage({
+      type: "activity",
+      ...selection
+    });
   }
 
   sendUpdate(update: Omit<CollaborationDocumentUpdateMessage, "type">) {
@@ -151,7 +155,7 @@ export class DocumentCollaborationSession {
     }, delay);
   }
 
-  private sendMessage(message: { type: "activity" | "ping" }) {
+  private sendMessage(message: CollaborationActivityMessage | { type: "ping" }) {
     if (this.socket?.readyState !== WebSocket.OPEN) {
       return;
     }

@@ -478,6 +478,34 @@ textarea {
   outline: none;
 }
 
+.editor-surface .remote-selection-highlight {
+  background: color-mix(in srgb, var(--remote-selection-color) 24%, white);
+  border-bottom: 2px solid var(--remote-selection-color);
+  border-radius: 4px;
+}
+
+.editor-surface .remote-cursor-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 2px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--remote-cursor-color) 18%, white);
+  color: #1f2933;
+  font-size: 0.72rem;
+  font-weight: 700;
+  border-left: 2px solid var(--remote-cursor-color);
+}
+
+.editor-surface .remote-cursor-pill::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--remote-cursor-color);
+}
+
 .editor-surface .ProseMirror h1,
 .editor-surface .ProseMirror h2,
 .editor-surface .ProseMirror p {
@@ -487,6 +515,19 @@ textarea {
 .sidebar-stack {
   display: grid;
   gap: 20px;
+}
+
+.presence-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.presence-color-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  flex-shrink: 0;
 }
 
 .sidebar-left,

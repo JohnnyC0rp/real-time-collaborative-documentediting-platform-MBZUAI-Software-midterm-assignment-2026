@@ -75,12 +75,31 @@ def test_collaboration_websocket_broadcasts_presence_and_updates(client_factory)
             if {entry["username"] for entry in owner_presence["presence"]} != {"owner", "editor"}:
                 owner_presence = receive_until_type(owner_ws, "presence")
             assert {entry["username"] for entry in owner_presence["presence"]} == {"owner", "editor"}
+            assert all(entry["cursor_color"] for entry in owner_presence["presence"])
+
+            editor_ws.send_json(
+                {
+                    "type": "activity",
+                    "selection_from": 1,
+                    "selection_to": 4,
+                    "selection_preview": "Rea"
+                }
+            )
+
+            owner_presence = receive_until_type(owner_ws, "presence")
+            editor_presence = next(
+                entry for entry in owner_presence["presence"] if entry["username"] == "editor"
+            )
+            assert editor_presence["selection_preview"] == "Rea"
 
             editor_ws.send_json(
                 {
                     "type": "document.update",
                     "title": "Realtime Notes",
-                    "content": "<p>Editor changed this live.</p>"
+                    "content": "<p>Editor changed this live.</p>",
+                    "base_version_id": document["versions"][0]["id"],
+                    "base_title": "Realtime Notes",
+                    "base_content": "<p></p>"
                 }
             )
 

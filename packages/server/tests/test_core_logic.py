@@ -4,6 +4,7 @@ from app.ai.prompts import build_prompt
 from app.errors import AppError
 from app.routers.documents import require_role
 from app.security import create_access_token, decode_token, hash_password, verify_password
+from app.store import merge_text_update
 
 
 def test_password_hash_round_trip() -> None:
@@ -41,3 +42,13 @@ def test_build_prompt_uses_templates_and_runtime_context() -> None:
     assert "Hello world" in user_prompt
     assert "Arabic" in user_prompt
     assert "Keep the tone formal" in user_prompt
+
+
+def test_merge_text_update_rebases_character_level_edits() -> None:
+    merged = merge_text_update(
+        base_text="Alpha plan",
+        current_text="Alpha team plan",
+        requested_text="Alpha plan draft"
+    )
+
+    assert merged == "Alpha team plan draft"

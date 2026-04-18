@@ -156,6 +156,9 @@ export interface UpdateDocumentRequest {
   title?: string;
   content?: string;
   save_source?: "autosave" | "manual-update";
+  base_version_id?: string | null;
+  base_title?: string | null;
+  base_content?: string | null;
 }
 
 export interface ShareDocumentRequest {
@@ -308,6 +311,10 @@ export interface CollaborationPresence {
   username: string;
   role: AccessRole;
   last_active_at: string;
+  cursor_color: string;
+  selection_from: number | null;
+  selection_to: number | null;
+  selection_preview: string | null;
 }
 
 export interface CollaborationDocumentState {
@@ -317,6 +324,7 @@ export interface CollaborationDocumentState {
   updated_at: string;
   version_id: string;
   latest_version?: DocumentVersion;
+  merge_strategy?: "direct" | "char-merge";
 }
 
 export interface CollaborationSnapshotEvent {
@@ -358,10 +366,16 @@ export interface CollaborationDocumentUpdateMessage {
   type: "document.update";
   title: string;
   content: string;
+  base_version_id?: string | null;
+  base_title?: string | null;
+  base_content?: string | null;
 }
 
 export interface CollaborationActivityMessage {
   type: "activity";
+  selection_from?: number | null;
+  selection_to?: number | null;
+  selection_preview?: string | null;
 }
 
 export interface CollaborationPingMessage {

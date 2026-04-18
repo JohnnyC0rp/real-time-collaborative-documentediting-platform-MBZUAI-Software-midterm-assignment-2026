@@ -14,16 +14,17 @@ this repository and the project history.
 - **Assessment:** Improvement for assignment delivery and local reproducibility;
   compromise for concurrency and production scaling.
 
-## 2. Last-write-wins collaboration instead of OT/CRDT
+## 2. Patch-based merge recovery instead of a full CRDT framework
 
-- **What changed:** Real-time collaboration uses authenticated WebSockets plus a
-  last-write-wins reconciliation model instead of operational transform or CRDT
-  conflict resolution.
-- **Why:** The assignment baseline accepts a simpler merge strategy. This
-  approach keeps the transport understandable, testable, and demo-friendly
-  while still handling join, reconnect, presence, and offline resync.
-- **Assessment:** Improvement for implementation speed and clarity; compromise
-  in fine-grained concurrent editing semantics.
+- **What changed:** Real-time collaboration now rebases concurrent edits with a
+  character-level patch merge and renders remote cursors and selections, but it
+  still does not use a full CRDT or dedicated OT framework.
+- **Why:** This keeps the FastAPI plus Tiptap architecture small enough for the
+  assignment while still moving beyond last-write-wins data loss and covering
+  the bonus collaboration behaviors.
+- **Assessment:** Improvement over the earlier baseline because concurrent text
+  changes now merge more gracefully and presence is richer; compromise compared
+  with a production-grade CRDT stack.
 
 ## 3. SSE for AI generation and WebSockets only for document sync
 

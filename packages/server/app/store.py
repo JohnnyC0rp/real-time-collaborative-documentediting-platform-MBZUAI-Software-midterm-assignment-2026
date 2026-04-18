@@ -7,6 +7,8 @@ from threading import Lock
 from typing import Any, Callable, TypeVar
 from uuid import uuid4
 
+from diff_match_patch import diff_match_patch
+
 from app.config import get_settings
 from app.security import hash_password, utc_now, verify_password
 
@@ -15,6 +17,8 @@ StoreMutationResult = TypeVar("StoreMutationResult")
 DEFAULT_TEST_USERNAME = "test"
 DEFAULT_TEST_PASSWORD = "12345678"
 DEFAULT_TEST_EMAIL = "test@example.com"
+
+dmp = diff_match_patch()
 
 
 class StoreConflictError(ValueError):
@@ -614,6 +618,9 @@ class JsonStore:
         document_id: str,
         title: str | None,
         content: str | None,
+        base_version_id: str | None,
+        base_title: str | None,
+        base_content: str | None,
         updated_at: str,
         updated_by_user_id: str,
         source: str
@@ -623,11 +630,31 @@ class JsonStore:
                 if document["id"] != document_id or document["deleted_at"] is not None:
                     continue
 
+                merge_strategy = "direct"
                 next_title = title.strip() if title is not None else document["title"]
                 next_content = content if content is not None else document["content"]
 
+                if title is not None and base_title is not None and base_title != document["title"]:
+                    next_title = merge_text_update(
+                        base_text=base_title,
+                        current_text=document["title"],
+                        requested_text=next_title
+                    )
+                    merge_strategy = "char-merge"
+
+                if content is not None and base_content is not None and base_content != document["content"]:
+                    next_content = merge_text_update(
+                        base_text=base_content,
+                        current_text=document["content"],
+                        requested_text=next_content
+                    )
+                    merge_strategy = "char-merge"
+
                 if next_title == document["title"] and next_content == document["content"]:
-                    return deepcopy(document)
+                    unchanged_document = deepcopy(document)
+                    unchanged_document["_merge_strategy"] = merge_strategy
+                    unchanged_document["_base_version_id"] = base_version_id
+                    return unchanged_document
 
                 document["title"] = next_title
                 document["content"] = next_content
@@ -643,7 +670,10 @@ class JsonStore:
                         "restored_from_version_id": None
                     }
                 )
-                return deepcopy(document)
+                updated_document = deepcopy(document)
+                updated_document["_merge_strategy"] = merge_strategy
+                updated_document["_base_version_id"] = base_version_id
+                return updated_document
 
             return None
 
@@ -763,3 +793,16 @@ class JsonStore:
 @lru_cache
 def get_store() -> JsonStore:
     return JsonStore(get_settings().data_file)
+
+
+def merge_text_update(*, base_text: str, current_text: str, requested_text: str) -> str:
+    if requested_text == current_text:
+        return current_text
+    if base_text == current_text:
+        return requested_text
+    if requested_text == base_text:
+        return current_text
+
+    patches = dmp.patch_make(base_text, requested_text)
+    merged_text, _results = dmp.patch_apply(patches, current_text)
+    return merged_text

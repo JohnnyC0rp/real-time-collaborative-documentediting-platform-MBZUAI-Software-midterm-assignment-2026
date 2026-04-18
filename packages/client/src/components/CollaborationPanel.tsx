@@ -38,8 +38,8 @@ export function CollaborationPanel({
         <div>
           <h2>Live collaboration</h2>
           <p className="muted-copy">
-            Signed-in collaborators and Ghost guests share the same last-write-wins WebSocket
-            channel with reconnect and presence updates.
+            Signed-in collaborators and Ghost guests share the same WebSocket channel with
+            reconnect support, character-level merge recovery, and live cursor awareness.
           </p>
         </div>
         <span className={`status-chip status-${connectionState}`}>{describeConnectionState(connectionState)}</span>
@@ -59,11 +59,21 @@ export function CollaborationPanel({
           presence.map((entry) => (
             <article key={`${entry.user_id}-${entry.role}`} className="list-card">
               <div>
-                <strong>
+                <strong className="presence-title">
+                  <span
+                    aria-hidden="true"
+                    className="presence-color-dot"
+                    style={{ backgroundColor: entry.cursor_color }}
+                  />
                   {entry.username}
                   {entry.user_id === currentUserId ? " (you)" : ""}
                 </strong>
                 <p>{describePresence(entry)}</p>
+                {entry.selection_preview ? (
+                  <p>Editing: “{entry.selection_preview}”</p>
+                ) : (
+                  <p>Cursor is active without a text selection.</p>
+                )}
               </div>
               <span className="history-flag">{entry.role}</span>
             </article>

@@ -57,6 +57,9 @@ def update_guest_document(
         document_id=document["id"],
         title=next_title,
         content=payload.content,
+        base_version_id=payload.base_version_id,
+        base_title=payload.base_title,
+        base_content=payload.base_content,
         updated_at=utc_now().isoformat(),
         updated_by_user_id=guest_user["id"],
         source=payload.save_source

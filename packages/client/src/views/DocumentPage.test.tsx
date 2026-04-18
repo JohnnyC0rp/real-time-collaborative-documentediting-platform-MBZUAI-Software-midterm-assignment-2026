@@ -138,7 +138,11 @@ const testState = vi.hoisted(() => {
             user_id: "user-1",
             username: "johnny",
             role: "owner",
-            last_active_at: "2026-04-18T10:00:00Z"
+            last_active_at: "2026-04-18T10:00:00Z",
+            cursor_color: "#005f73",
+            selection_from: 1,
+            selection_to: 6,
+            selection_preview: "Alpha"
           }
         ]
       });

@@ -33,6 +33,7 @@ import {
   updateGuestDocument,
   updateDocument
 } from "../lib/documents";
+import { pushRemotePresence, RemotePresenceExtension } from "../lib/remotePresence";
 
 function formatTimestamp(value: string) {
   return new Date(value).toLocaleString();
@@ -251,6 +252,23 @@ function documentSnapshot(title: string, content: string) {
   });
 }
 
+function selectionPreview(value: string) {
+  const collapsed = value.replace(/\s+/g, " ").trim();
+  if (!collapsed) {
+    return null;
+  }
+  return collapsed.length <= 72 ? collapsed : `${collapsed.slice(0, 71).trimEnd()}…`;
+}
+
+function buildSelectionPresence(editor: Editor) {
+  const { from, to } = editor.state.selection;
+  return {
+    selection_from: from,
+    selection_to: to,
+    selection_preview: selectionPreview(editor.state.doc.textBetween(from, to, " "))
+  };
+}
+
 function mergeLatestVersion(
   versions: DocumentDetail["versions"],
   latestVersion: CollaborationDocumentState["latest_version"]
@@ -319,13 +337,24 @@ export function DocumentPage() {
   const aiAbortControllerRef = useRef<AbortController | null>(null);
   const aiStreamTextRef = useRef("");
   const collaborationSessionRef = useRef<DocumentCollaborationSession | null>(null);
+  const collaborationPresenceRef = useRef<CollaborationPresence[]>([]);
   const currentTitleRef = useRef(title);
   const currentContentRef = useRef(content);
+  const currentUserIdRef = useRef<string | null>(null);
   const canEditRef = useRef(false);
   const editorRef = useRef<Editor | null>(null);
+  const lastSyncedVersionIdRef = useRef<string | null>(null);
+  const lastSyncedTitleRef = useRef("");
+  const lastSyncedContentRef = useRef("<p></p>");
 
   const editor = useEditor({
-    extensions: [StarterKit],
+    extensions: [
+      StarterKit,
+      RemotePresenceExtension.configure({
+        getCurrentUserId: () => currentUserIdRef.current,
+        getPresence: () => collaborationPresenceRef.current
+      })
+    ],
     content: "<p></p>",
     editable: false,
     immediatelyRender: false,
@@ -334,6 +363,7 @@ export function DocumentPage() {
     },
     onSelectionUpdate({ editor: currentEditor }) {
       setHasTextSelection(currentEditor.state.selection.from !== currentEditor.state.selection.to);
+      collaborationSessionRef.current?.sendActivity(buildSelectionPresence(currentEditor));
     }
   });
 
@@ -370,6 +400,9 @@ export function DocumentPage() {
     setContent(nextState.content);
     lastSavedSnapshot.current = documentSnapshot(nextState.title, nextState.content);
     lastCollaborationSnapshot.current = lastSavedSnapshot.current;
+    lastSyncedVersionIdRef.current = nextState.version_id;
+    lastSyncedTitleRef.current = nextState.title;
+    lastSyncedContentRef.current = nextState.content;
     setSaveStatus(saveMessage);
     const liveEditor = editorRef.current;
     if (liveEditor && liveEditor.getHTML() !== nextState.content) {
@@ -378,11 +411,15 @@ export function DocumentPage() {
   }
 
   function applyDocument(nextDocument: DocumentDetail) {
+    const latestVersionId = nextDocument.versions[0]?.id ?? null;
     setDocument(nextDocument);
     setTitle(nextDocument.title);
     setContent(nextDocument.content);
     lastSavedSnapshot.current = documentSnapshot(nextDocument.title, nextDocument.content);
     lastCollaborationSnapshot.current = lastSavedSnapshot.current;
+    lastSyncedVersionIdRef.current = latestVersionId;
+    lastSyncedTitleRef.current = nextDocument.title;
+    lastSyncedContentRef.current = nextDocument.content;
     setSaveStatus(`Saved at ${formatTimestamp(nextDocument.updated_at)}`);
     if (editor && editor.getHTML() !== nextDocument.content) {
       editor.commands.setContent(nextDocument.content, false);
@@ -404,9 +441,15 @@ export function DocumentPage() {
   useEffect(() => {
     currentTitleRef.current = title;
     currentContentRef.current = content;
+    currentUserIdRef.current = currentUserId;
     canEditRef.current = canEdit;
     editorRef.current = editor;
-  }, [canEdit, content, editor, title]);
+  }, [canEdit, content, currentUserId, editor, title]);
+
+  useEffect(() => {
+    collaborationPresenceRef.current = collaborationPresence;
+    pushRemotePresence(editor ?? null, collaborationPresence);
+  }, [collaborationPresence, editor]);
 
   useEffect(() => {
     let isMounted = true;
@@ -501,22 +544,12 @@ export function DocumentPage() {
 
     const session = new DocumentCollaborationSession(document.id, collaborationAuth, {
       onAck: (event) => {
-        lastSavedSnapshot.current = documentSnapshot(event.document.title, event.document.content);
-        lastCollaborationSnapshot.current = lastSavedSnapshot.current;
-        setDocument((currentDocument) =>
-          currentDocument
-            ? {
-                ...currentDocument,
-                title: event.document.title,
-                content: event.document.content,
-                updated_at: event.document.updated_at,
-                versions: mergeLatestVersion(currentDocument.versions, event.document.latest_version)
-              }
-            : currentDocument
+        applyCollaborationDocumentState(
+          event.document,
+          event.document.merge_strategy === "char-merge"
+            ? `Live merged at ${formatTimestamp(event.document.updated_at)}`
+            : `Live synced at ${formatTimestamp(event.document.updated_at)}`
         );
-        setTitle(event.document.title);
-        setContent(event.document.content);
-        setSaveStatus(`Live synced at ${formatTimestamp(event.document.updated_at)}`);
       },
       onConnectionStateChange: setCollaborationState,
       onError: (message) => {
@@ -545,7 +578,9 @@ export function DocumentPage() {
 
         applyCollaborationDocumentState(
           event.document,
-          `Live update from ${event.updated_by.username} at ${formatTimestamp(event.document.updated_at)}`
+          event.document.merge_strategy === "char-merge"
+            ? `Live merged ${event.updated_by.username}'s changes at ${formatTimestamp(event.document.updated_at)}`
+            : `Live update from ${event.updated_by.username} at ${formatTimestamp(event.document.updated_at)}`
         );
       },
       onSnapshot: (event) => {
@@ -661,9 +696,14 @@ export function DocumentPage() {
     const timeoutId = window.setTimeout(() => {
       collaborationSessionRef.current?.sendUpdate({
         title: title.trim(),
-        content
+        content,
+        base_version_id: lastSyncedVersionIdRef.current,
+        base_title: lastSyncedTitleRef.current,
+        base_content: lastSyncedContentRef.current
       });
-      collaborationSessionRef.current?.sendActivity();
+      collaborationSessionRef.current?.sendActivity(
+        editorRef.current ? buildSelectionPresence(editorRef.current) : undefined
+      );
       setSaveStatus(
         collaborationState === "connected"
           ? "Live syncing..."
@@ -710,12 +750,18 @@ export function DocumentPage() {
           ? await updateGuestDocument(shareToken, document.id, guestKey, {
               title: normalizedTitle,
               content: contentOverride ?? content,
-              save_source: saveSource
+              save_source: saveSource,
+              base_version_id: lastSyncedVersionIdRef.current,
+              base_title: lastSyncedTitleRef.current,
+              base_content: lastSyncedContentRef.current
             })
           : await updateDocument(document.id, {
               title: normalizedTitle,
               content: contentOverride ?? content,
-              save_source: saveSource
+              save_source: saveSource,
+              base_version_id: lastSyncedVersionIdRef.current,
+              base_title: lastSyncedTitleRef.current,
+              base_content: lastSyncedContentRef.current
             });
       setErrorMessage("");
       applyDocument(nextDocument);

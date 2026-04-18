@@ -18,6 +18,24 @@ class RoomConnection:
     email: str
     role: str
     last_active_at: str
+    cursor_color: str
+    selection_from: int | None
+    selection_to: int | None
+    selection_preview: str | None
+
+
+CURSOR_PALETTE = (
+    "#b2553a",
+    "#005f73",
+    "#6d28d9",
+    "#166534",
+    "#c2410c",
+    "#1d4ed8"
+)
+
+
+def cursor_color_for_user(user_id: str) -> str:
+    return CURSOR_PALETTE[sum(ord(character) for character in user_id) % len(CURSOR_PALETTE)]
 
 
 class CollaborationHub:
@@ -41,7 +59,11 @@ class CollaborationHub:
             username=user["username"],
             email=user["email"],
             role=role,
-            last_active_at=connected_at
+            last_active_at=connected_at,
+            cursor_color=cursor_color_for_user(user["id"]),
+            selection_from=None,
+            selection_to=None,
+            selection_preview=None
         )
         async with self._lock:
             room = self._rooms.setdefault(document_id, {})
@@ -58,15 +80,28 @@ class CollaborationHub:
             if not room:
                 self._rooms.pop(document_id, None)
 
-    async def touch(self, document_id: str, connection_id: str, active_at: str) -> None:
+    async def touch(
+        self,
+        document_id: str,
+        connection_id: str,
+        active_at: str,
+        *,
+        selection_from: int | None = None,
+        selection_to: int | None = None,
+        selection_preview: str | None = None
+    ) -> None:
         async with self._lock:
             room = self._rooms.get(document_id)
             if room is None or connection_id not in room:
                 return
 
-            room[connection_id].last_active_at = active_at
+            connection = room[connection_id]
+            connection.last_active_at = active_at
+            connection.selection_from = selection_from
+            connection.selection_to = selection_to
+            connection.selection_preview = selection_preview
 
-    async def presence_for_document(self, document_id: str) -> list[dict[str, str]]:
+    async def presence_for_document(self, document_id: str) -> list[dict[str, Any]]:
         async with self._lock:
             room = self._rooms.get(document_id, {})
             return [
@@ -74,7 +109,11 @@ class CollaborationHub:
                     "user_id": connection.user_id,
                     "username": connection.username,
                     "role": connection.role,
-                    "last_active_at": connection.last_active_at
+                    "last_active_at": connection.last_active_at,
+                    "cursor_color": connection.cursor_color,
+                    "selection_from": connection.selection_from,
+                    "selection_to": connection.selection_to,
+                    "selection_preview": connection.selection_preview
                 }
                 for connection in room.values()
             ]

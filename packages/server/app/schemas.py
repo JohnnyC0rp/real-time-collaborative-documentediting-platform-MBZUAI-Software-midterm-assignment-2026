@@ -54,6 +54,9 @@ class UpdateDocumentRequest(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=120)
     content: str | None = None
     save_source: Literal["autosave", "manual-update"] = "manual-update"
+    base_version_id: str | None = Field(default=None, min_length=1, max_length=64)
+    base_title: str | None = Field(default=None, max_length=120)
+    base_content: str | None = Field(default=None, max_length=250_000)
 
 
 class ShareDocumentRequest(BaseModel):

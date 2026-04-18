@@ -15,13 +15,15 @@ a FastAPI backend, and a shared contract package for browser-facing types.
 - Rich-text editing with headings, bold, italic, ordered lists, bullet lists,
   and code blocks.
 - Real-time collaboration over authenticated WebSockets with presence, activity
-  awareness, reconnection, and last-write-wins reconciliation.
+  awareness, reconnection, character-level merge recovery, and remote cursor
+  plus selection rendering.
 - AI rewrite, summarize, translate, and restructure actions streamed with SSE,
   plus compare/apply/reject/edit review flow, cancellation, undo-after-apply,
   prompt configuration, provider abstraction, per-document history, and
   estimated token plus cost tracking.
 - Automated backend and frontend tests for the core auth, document, AI, and
-  collaboration flows required by the assignment baseline.
+  collaboration flows required by the assignment baseline, plus optional
+  Playwright end-to-end coverage for the main owner and guest-link flows.
 
 ## Stack
 
@@ -151,9 +153,11 @@ npx playwright install
 - The server sends a `snapshot` on join, `presence` updates when participants
   connect or show activity, `ack` for accepted local writes, and
   `document.updated` for remote writes.
-- The baseline sync strategy is last-write-wins. When a client reconnects with
-  unsynced local edits, it keeps the local editor state and flushes the latest
-  pending update after the server snapshot arrives.
+- Each client sends the last synchronized document base along with new edits.
+  When another change lands first, the server rebases the incoming edit with a
+  character-level patch merge instead of blindly discarding one side.
+- Presence payloads also carry remote selections so the editor can render live
+  cursors and highlight the active range of other collaborators.
 
 ### AI Flow
 
