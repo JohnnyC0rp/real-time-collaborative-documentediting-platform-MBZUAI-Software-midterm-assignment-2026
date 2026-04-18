@@ -18,33 +18,49 @@ interface CollaborationCallbacks {
   onSnapshot?: (event: CollaborationSnapshotEvent) => void;
 }
 
-function collaborationUrl(documentId: string, accessToken: string) {
+export type CollaborationAuth =
+  | {
+      kind: "user";
+      accessToken: string;
+    }
+  | {
+      kind: "guest";
+      shareToken: string;
+      guestKey: string;
+    };
+
+function collaborationUrl(documentId: string, auth: CollaborationAuth) {
   const url = new URL(API_BASE_URL);
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
   url.pathname = `/api/collaboration/documents/${documentId}`;
-  url.searchParams.set("token", accessToken);
+  if (auth.kind === "user") {
+    url.searchParams.set("token", auth.accessToken);
+  } else {
+    url.searchParams.set("share_token", auth.shareToken);
+    url.searchParams.set("guest_key", auth.guestKey);
+  }
   return url.toString();
 }
 
 export class DocumentCollaborationSession {
+  private auth: CollaborationAuth;
   private callbacks: CollaborationCallbacks;
   private closed = false;
   private documentId: string;
-  private accessToken: string;
   private reconnectAttempt = 0;
   private reconnectTimeoutId: number | null = null;
   private socket: WebSocket | null = null;
   private pendingUpdate: CollaborationDocumentUpdateMessage | null = null;
 
-  constructor(documentId: string, accessToken: string, callbacks: CollaborationCallbacks) {
+  constructor(documentId: string, auth: CollaborationAuth, callbacks: CollaborationCallbacks) {
     this.documentId = documentId;
-    this.accessToken = accessToken;
+    this.auth = auth;
     this.callbacks = callbacks;
   }
 
   connect() {
     this.updateConnectionState(this.reconnectAttempt === 0 ? "connecting" : "reconnecting");
-    this.socket = new WebSocket(collaborationUrl(this.documentId, this.accessToken));
+    this.socket = new WebSocket(collaborationUrl(this.documentId, this.auth));
     this.socket.addEventListener("open", () => {
       this.reconnectAttempt = 0;
       this.updateConnectionState("connected");
