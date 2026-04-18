@@ -14,6 +14,7 @@ interface AiStreamHandlers {
   onStreaming?: (event: AiActionStreamingEvent) => void;
   onResult?: (event: AiActionResult) => void;
   onFailed?: (message: string) => void;
+  signal?: AbortSignal;
 }
 
 function parseEventBlock(block: string) {
@@ -44,7 +45,8 @@ export async function streamAiAction(payload: SubmitAiActionRequest, handlers: A
       "Accept": "text/event-stream",
       "Content-Type": "application/json"
     },
-    body: JSON.stringify(payload)
+    body: JSON.stringify(payload),
+    signal: handlers.signal
   });
 
   if (!response.ok) {

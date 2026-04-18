@@ -217,6 +217,10 @@ function getCurrentReviewText(editor: Editor, review: AiActionResult | null) {
   return plainText.slice(start, end).trim();
 }
 
+function isAbortError(error: unknown) {
+  return error instanceof Error && error.name === "AbortError";
+}
+
 export function DocumentPage() {
   const navigate = useNavigate();
   const { documentId = "" } = useParams();
@@ -243,12 +247,16 @@ export function DocumentPage() {
   const [aiReview, setAiReview] = useState<AiActionResult | null>(null);
   const [proposalDraft, setProposalDraft] = useState("");
   const [selectedSegments, setSelectedSegments] = useState<number[]>([]);
+  const [undoAiContent, setUndoAiContent] = useState<string | null>(null);
+  const [didUndoAiApply, setDidUndoAiApply] = useState(false);
   const [aiHistory, setAiHistory] = useState<AiInteractionRecord[]>([]);
   const [isAiHistoryLoading, setIsAiHistoryLoading] = useState(false);
   const [aiHistoryActionFilter, setAiHistoryActionFilter] = useState("all");
   const [aiHistoryResolutionFilter, setAiHistoryResolutionFilter] = useState("all");
   const [aiHistoryRefreshToken, setAiHistoryRefreshToken] = useState(0);
   const lastSavedSnapshot = useRef("");
+  const aiAbortControllerRef = useRef<AbortController | null>(null);
+  const aiStreamTextRef = useRef("");
 
   const editor = useEditor({
     extensions: [StarterKit],
@@ -329,6 +337,12 @@ export function DocumentPage() {
       isMounted = false;
     };
   }, [documentId]);
+
+  useEffect(() => {
+    return () => {
+      aiAbortControllerRef.current?.abort();
+    };
+  }, []);
 
   useEffect(() => {
     if (!editor) {
@@ -542,7 +556,12 @@ export function DocumentPage() {
     setAiReview(null);
     setProposalDraft("");
     setAiStreamText("");
+    aiStreamTextRef.current = "";
+    setDidUndoAiApply(false);
     setAiStatusMessage(`Submitting ${describeAiAction(aiAction).toLowerCase()} request...`);
+
+    const abortController = new AbortController();
+    aiAbortControllerRef.current = abortController;
 
     try {
       await streamAiAction(
@@ -555,10 +574,12 @@ export function DocumentPage() {
           target_language: aiAction === "translate" ? aiTargetLanguage.trim() || undefined : undefined
         },
         {
+          signal: abortController.signal,
           onAccepted: () => {
             setAiStatusMessage("AI request accepted. Streaming suggestion...");
           },
           onStreaming: (event) => {
+            aiStreamTextRef.current = event.accumulated_text;
             setAiStreamText(event.accumulated_text);
           },
           onResult: (result) => {
@@ -584,11 +605,32 @@ export function DocumentPage() {
         }
       );
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "AI request failed");
-      setAiStatusMessage("AI request failed");
+      if (isAbortError(error)) {
+        setErrorMessage("");
+        setAiStatusMessage(
+          aiStreamTextRef.current
+            ? "AI request canceled. Partial draft kept for reference."
+            : "AI request canceled before any draft text arrived."
+        );
+      } else {
+        setErrorMessage(error instanceof Error ? error.message : "AI request failed");
+        setAiStatusMessage("AI request failed");
+      }
     } finally {
+      if (aiAbortControllerRef.current === abortController) {
+        aiAbortControllerRef.current = null;
+      }
       setIsAiSubmitting(false);
     }
+  }
+
+  function handleCancelAiRequest() {
+    if (!isAiSubmitting) {
+      return;
+    }
+
+    setAiStatusMessage("Canceling AI request...");
+    aiAbortControllerRef.current?.abort();
   }
 
   async function handleRejectAiSuggestion() {
@@ -643,19 +685,26 @@ export function DocumentPage() {
 
     setIsAiResolving(true);
     setErrorMessage("");
+    const previousContent = editor.getHTML();
+    let didPersistChange = false;
 
     try {
       editor.chain().focus().insertContentAt(range, plainTextToHtml(selectedSuggestionText)).run();
       const nextContent = editor.getHTML();
       const savedDocument = await persistDocument("manual-update", nextContent);
       if (!savedDocument) {
+        editor.commands.setContent(previousContent, false);
         return;
       }
+      didPersistChange = true;
 
       const latestVersionId = savedDocument.versions[0]?.id;
       if (!latestVersionId) {
         throw new Error("Unable to determine the saved document version");
       }
+
+      setUndoAiContent(previousContent);
+      setDidUndoAiApply(false);
 
       const resolution =
         selectedSuggestionText.trim() === aiReview.suggestion_text.trim()
@@ -678,10 +727,33 @@ export function DocumentPage() {
       );
       setAiHistoryRefreshToken((value) => value + 1);
     } catch (error) {
+      if (!didPersistChange) {
+        editor.commands.setContent(previousContent, false);
+      }
       setErrorMessage(error instanceof Error ? error.message : "Failed to apply suggestion");
     } finally {
       setIsAiResolving(false);
     }
+  }
+
+  async function handleUndoAiApply() {
+    if (!editor || !undoAiContent) {
+      return;
+    }
+
+    const currentContent = editor.getHTML();
+    setErrorMessage("");
+    editor.commands.setContent(undoAiContent, false);
+
+    const restoredDocument = await persistDocument("manual-update", undoAiContent);
+    if (!restoredDocument) {
+      editor.commands.setContent(currentContent, false);
+      return;
+    }
+
+    setUndoAiContent(null);
+    setDidUndoAiApply(true);
+    setAiStatusMessage("Last applied AI suggestion was undone.");
   }
 
   function toggleSegment(index: number) {
@@ -788,7 +860,19 @@ export function DocumentPage() {
                   outline. Suggestions stay review-first until you apply them.
                 </p>
               </div>
-              <span className="save-chip ai-status-chip">{aiStatusMessage}</span>
+              <div className="document-actions">
+                {undoAiContent ? (
+                  <button
+                    className="ghost-button"
+                    disabled={isAiResolving}
+                    type="button"
+                    onClick={() => void handleUndoAiApply()}
+                  >
+                    Undo last AI apply
+                  </button>
+                ) : null}
+                <span className="save-chip ai-status-chip">{aiStatusMessage}</span>
+              </div>
             </div>
 
             <div className="ai-action-row">
@@ -835,6 +919,11 @@ export function DocumentPage() {
               >
                 {isAiSubmitting ? "Requesting..." : `Run ${describeAiAction(aiAction)}`}
               </button>
+              {isAiSubmitting ? (
+                <button className="ghost-button" type="button" onClick={handleCancelAiRequest}>
+                  Cancel
+                </button>
+              ) : null}
               {!hasTextSelection ? (
                 <p className="muted-copy">Select text in the editor to enable AI actions.</p>
               ) : null}
@@ -930,6 +1019,10 @@ export function DocumentPage() {
                   </button>
                 </div>
               </div>
+            ) : null}
+
+            {didUndoAiApply ? (
+              <p className="muted-copy">The last accepted AI change was restored as a new saved version.</p>
             ) : null}
           </section>
         ) : (
