@@ -106,3 +106,96 @@ class DocumentsResponse(BaseModel):
 
 class SuccessResponse(BaseModel):
     success: bool = True
+
+
+class AiSelectionRequest(BaseModel):
+    plain_text_start: int = Field(ge=0)
+    plain_text_end: int = Field(ge=0)
+    tiptap_from: int = Field(ge=0)
+    tiptap_to: int = Field(ge=0)
+    text: str = Field(min_length=1, max_length=20000)
+    before_context: str = Field(default="", max_length=2000)
+    after_context: str = Field(default="", max_length=2000)
+    outline_summary: str = Field(default="", max_length=2000)
+
+
+class SubmitAiActionRequest(BaseModel):
+    document_id: str = Field(min_length=1, max_length=64)
+    action: Literal["rewrite", "summarize", "translate", "restructure"]
+    selection: AiSelectionRequest
+    requested_document_version_id: str = Field(min_length=1, max_length=64)
+    target_language: str | None = Field(default=None, min_length=2, max_length=64)
+    instruction: str | None = Field(default=None, max_length=400)
+
+
+class ResolveAiInteractionRequest(BaseModel):
+    resolution: Literal["accepted", "edited-before-apply", "rejected"]
+    applied_document_version_id: str | None = Field(default=None, min_length=1, max_length=64)
+    final_text: str | None = Field(default=None, max_length=30000)
+
+
+class AiActionAcceptedResponse(BaseModel):
+    interaction_id: str
+    action: Literal["rewrite", "summarize", "translate", "restructure"]
+    requested_at: datetime
+    model_id: str
+
+
+class AiActionStreamingResponse(BaseModel):
+    interaction_id: str
+    delta: str
+    accumulated_text: str
+
+
+class AiActionResultResponse(BaseModel):
+    interaction_id: str
+    document_id: str
+    action: Literal["rewrite", "summarize", "translate", "restructure"]
+    stage: Literal["complete", "stale"]
+    resolution: Literal["pending-review"]
+    requested_at: datetime
+    completed_at: datetime
+    model_id: str
+    original_text: str
+    suggestion_text: str
+    requested_document_version_id: str
+    current_document_version_id: str
+    target_language: str | None
+    instruction: str | None
+    selection: AiSelectionRequest
+
+
+class AiInteractionResponse(BaseModel):
+    id: str
+    document_id: str
+    action: Literal["rewrite", "summarize", "translate", "restructure"]
+    stage: Literal["accepted", "complete", "stale", "failed"]
+    resolution: Literal[
+        "pending-review",
+        "accepted",
+        "edited-before-apply",
+        "rejected",
+        "expired",
+        "failed"
+    ]
+    requested_at: datetime
+    completed_at: datetime | None
+    resolved_at: datetime | None
+    updated_at: datetime
+    requested_by: PublicUserResponse
+    model_id: str
+    target_language: str | None
+    instruction: str | None
+    requested_document_version_id: str
+    current_document_version_id: str | None
+    applied_document_version_id: str | None
+    selection_plain_text_start: int
+    selection_plain_text_end: int
+    selection_text_preview: str
+    suggestion_preview: str | None
+    error_code: str | None
+
+
+class AiHistoryResponse(BaseModel):
+    interactions: list[AiInteractionResponse]
+    total: int

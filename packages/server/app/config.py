@@ -1,5 +1,6 @@
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -18,6 +19,18 @@ class Settings(BaseSettings):
     refresh_cookie_name: str = "collab_refresh_token"
     secure_cookies: bool = False
     data_file: Path = REPO_ROOT / "packages/server/data/app-data.json"
+    ai_provider: Literal["local", "openai", "gemini"] = "local"
+    ai_max_context_chars: int = 2000
+    ai_outline_heading_limit: int = 5
+    ai_daily_quota_owner: int = 25
+    ai_daily_quota_editor: int = 15
+    ai_daily_quota_viewer: int = 0
+    openai_base_url: str = "https://api.openai.com/v1"
+    openai_api_key: str | None = None
+    openai_model: str = "gpt-4.1-mini"
+    gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta"
+    gemini_api_key: str | None = None
+    gemini_model: str = "gemini-2.5-flash-lite"
 
     model_config = SettingsConfigDict(
         env_file=str(REPO_ROOT / ".env"),
