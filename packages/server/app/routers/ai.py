@@ -117,8 +117,16 @@ def current_model_id() -> str:
     return "local-fallback-v1"
 
 
-def to_ai_interaction_response(interaction: dict, store: JsonStore) -> AiInteractionResponse:
-    requested_by = to_public_user(store.get_user_by_id(interaction["requested_by_user_id"]))
+def to_ai_interaction_response(
+    interaction: dict,
+    store: JsonStore,
+    public_users_by_id: dict[str, PublicUserResponse] | None = None
+) -> AiInteractionResponse:
+    requested_by = (
+        public_users_by_id[interaction["requested_by_user_id"]]
+        if public_users_by_id is not None
+        else to_public_user(store.get_user_by_id(interaction["requested_by_user_id"]))
+    )
     return AiInteractionResponse(
         id=interaction["id"],
         document_id=interaction["document_id"],
@@ -389,7 +397,7 @@ def get_ai_history(
     current_user: dict = Depends(get_current_user),
     store: JsonStore = Depends(get_json_store)
 ) -> AiHistoryResponse:
-    _document, role = resolve_document_for_user(
+    document, role = resolve_document_for_user(
         document_id=document_id,
         current_user=current_user,
         store=store
@@ -414,7 +422,17 @@ def get_ai_history(
         end_iso = datetime.combine(date_to + timedelta(days=1), datetime.min.time(), tzinfo=UTC).isoformat()
         interactions = [item for item in interactions if item["requested_at"] < end_iso]
 
+    public_users_by_id = {
+        user_id: to_public_user(user)
+        for user_id, user in store.list_users_by_ids(
+            {document["owner_id"], *(interaction["requested_by_user_id"] for interaction in interactions)}
+        ).items()
+    }
+
     return AiHistoryResponse(
-        interactions=[to_ai_interaction_response(item, store) for item in interactions],
+        interactions=[
+            to_ai_interaction_response(item, store, public_users_by_id)
+            for item in interactions
+        ],
         total=len(interactions)
     )

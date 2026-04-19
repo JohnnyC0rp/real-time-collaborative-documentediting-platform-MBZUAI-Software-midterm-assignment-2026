@@ -36,6 +36,8 @@ async function parseSession(response: Response): Promise<AuthSession> {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<AuthSession | null>(null);
   const [isBootstrapping, setIsBootstrapping] = useState(true);
+  const isSharedRoute =
+    typeof window !== "undefined" && window.location.pathname.startsWith("/shared/");
 
   function applySession(nextSession: AuthSession | null) {
     setSession(nextSession);
@@ -96,6 +98,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     setRefreshHandler(refreshSession);
 
+    if (isSharedRoute) {
+      // Public guest routes should not start with a predictable 401 chorus.
+      setIsBootstrapping(false);
+      return () => {
+        setRefreshHandler(null);
+        setAccessToken(null);
+      };
+    }
+
     void refreshSession().finally(() => {
       setIsBootstrapping(false);
     });
@@ -104,7 +115,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setRefreshHandler(null);
       setAccessToken(null);
     };
-  }, []);
+  }, [isSharedRoute]);
 
   return (
     <AuthContext.Provider

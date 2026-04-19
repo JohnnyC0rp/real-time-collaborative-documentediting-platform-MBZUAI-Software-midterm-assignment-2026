@@ -29,18 +29,25 @@ class JsonStore:
     def __init__(self, data_file: Path) -> None:
         self._data_file = data_file
         self._lock = Lock()
+        self._initialized = False
 
     def ensure_initialized(self) -> None:
+        if self._initialized:
+            return
+
         self._data_file.parent.mkdir(parents=True, exist_ok=True)
         if not self._data_file.exists() or self._data_file.stat().st_size == 0:
             self._write_state(self._empty_state())
+            self._initialized = True
             return
 
         with self._data_file.open("r", encoding="utf-8") as handle:
             state = json.load(handle)
 
-        if self._apply_state_defaults(state):
+        if self._apply_state_defaults(state, enforce_test_password=True):
             self._write_state(state)
+
+        self._initialized = True
 
     def _empty_state(self) -> dict[str, list[dict[str, Any]]]:
         state = {
@@ -50,10 +57,15 @@ class JsonStore:
             "ai_interactions": [],
             "guest_identities": []
         }
-        self._apply_state_defaults(state)
+        self._apply_state_defaults(state, enforce_test_password=True)
         return state
 
-    def _apply_state_defaults(self, state: dict[str, list[dict[str, Any]]]) -> bool:
+    def _apply_state_defaults(
+        self,
+        state: dict[str, list[dict[str, Any]]],
+        *,
+        enforce_test_password: bool
+    ) -> bool:
         did_change = False
 
         for key in ("users", "documents", "refresh_sessions", "ai_interactions", "guest_identities"):
@@ -83,9 +95,17 @@ class JsonStore:
                 document["versions"] = []
                 did_change = True
 
-        return self._ensure_default_test_user(state) or did_change
+        return self._ensure_default_test_user(
+            state,
+            enforce_test_password=enforce_test_password
+        ) or did_change
 
-    def _ensure_default_test_user(self, state: dict[str, list[dict[str, Any]]]) -> bool:
+    def _ensure_default_test_user(
+        self,
+        state: dict[str, list[dict[str, Any]]],
+        *,
+        enforce_test_password: bool
+    ) -> bool:
         for user in state["users"]:
             if user.get("is_guest"):
                 continue
@@ -94,7 +114,10 @@ class JsonStore:
 
             did_change = False
             password_hash = str(user.get("password_hash", ""))
-            if not password_hash or not verify_password(DEFAULT_TEST_PASSWORD, password_hash):
+            if not password_hash:
+                user["password_hash"] = hash_password(DEFAULT_TEST_PASSWORD)
+                did_change = True
+            elif enforce_test_password and not verify_password(DEFAULT_TEST_PASSWORD, password_hash):
                 user["password_hash"] = hash_password(DEFAULT_TEST_PASSWORD)
                 did_change = True
 
@@ -129,13 +152,14 @@ class JsonStore:
         with self._data_file.open("r", encoding="utf-8") as handle:
             state = json.load(handle)
 
-        self._apply_state_defaults(state)
+        self._apply_state_defaults(state, enforce_test_password=False)
         return state
 
     def _write_state(self, state: dict[str, list[dict[str, Any]]]) -> None:
         self._data_file.parent.mkdir(parents=True, exist_ok=True)
         with self._data_file.open("w", encoding="utf-8") as handle:
             json.dump(state, handle, indent=2)
+        self._initialized = True
 
     def _mutate(
         self,

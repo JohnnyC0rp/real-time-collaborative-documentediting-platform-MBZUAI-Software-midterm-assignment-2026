@@ -43,6 +43,32 @@ def to_public_user(user: dict | None) -> PublicUserResponse:
     )
 
 
+def build_public_user_lookup(store: JsonStore, user_ids: set[str]) -> dict[str, PublicUserResponse]:
+    return {
+        user_id: to_public_user(user)
+        for user_id, user in store.list_users_by_ids(user_ids).items()
+    }
+
+
+def require_public_user(
+    public_users_by_id: dict[str, PublicUserResponse],
+    user_id: str
+) -> PublicUserResponse:
+    user = public_users_by_id.get(user_id)
+    if user is None:
+        raise AppError(404, "NOT_FOUND", "User not found")
+    return user
+
+
+def resolve_public_user(
+    store_or_users: JsonStore | dict[str, PublicUserResponse],
+    user_id: str
+) -> PublicUserResponse:
+    if isinstance(store_or_users, JsonStore):
+        return to_public_user(store_or_users.get_user_by_id(user_id))
+    return require_public_user(store_or_users, user_id)
+
+
 def resolve_document_for_user(
     *,
     document_id: str,
@@ -65,9 +91,11 @@ def require_role(actual_role: str, allowed_roles: set[str], message: str) -> Non
         raise AppError(403, "FORBIDDEN", message)
 
 
-def to_share_response(share: dict, store: JsonStore) -> DocumentShareResponse:
-    shared_user = store.get_user_by_id(share["user_id"])
-    user = to_public_user(shared_user)
+def to_share_response(
+    share: dict,
+    store_or_users: JsonStore | dict[str, PublicUserResponse]
+) -> DocumentShareResponse:
+    user = resolve_public_user(store_or_users, share["user_id"])
     return DocumentShareResponse(
         id=share["id"],
         user_id=share["user_id"],
@@ -88,8 +116,11 @@ def to_share_link_response(share_link: dict) -> DocumentShareLinkResponse:
     )
 
 
-def to_version_response(version: dict, store: JsonStore) -> DocumentVersionResponse:
-    created_by = to_public_user(store.get_user_by_id(version["created_by_user_id"]))
+def to_version_response(
+    version: dict,
+    store_or_users: JsonStore | dict[str, PublicUserResponse]
+) -> DocumentVersionResponse:
+    created_by = resolve_public_user(store_or_users, version["created_by_user_id"])
     return DocumentVersionResponse(
         id=version["id"],
         title=version["title"],
@@ -101,8 +132,11 @@ def to_version_response(version: dict, store: JsonStore) -> DocumentVersionRespo
     )
 
 
-def to_ai_interaction_response(interaction: dict, store: JsonStore) -> DocumentAiInteractionResponse:
-    requested_by = to_public_user(store.get_user_by_id(interaction["requested_by_user_id"]))
+def to_ai_interaction_response(
+    interaction: dict,
+    store_or_users: JsonStore | dict[str, PublicUserResponse]
+) -> DocumentAiInteractionResponse:
+    requested_by = resolve_public_user(store_or_users, interaction["requested_by_user_id"])
     return DocumentAiInteractionResponse(
         id=interaction["id"],
         feature=interaction["feature"],
@@ -121,8 +155,17 @@ def to_ai_interaction_response(interaction: dict, store: JsonStore) -> DocumentA
     )
 
 
-def to_document_summary(document: dict, role: str, store: JsonStore) -> DocumentSummaryResponse:
-    owner = to_public_user(store.get_user_by_id(document["owner_id"]))
+def to_document_summary(
+    document: dict,
+    role: str,
+    store: JsonStore,
+    public_users_by_id: dict[str, PublicUserResponse] | None = None
+) -> DocumentSummaryResponse:
+    owner = (
+        require_public_user(public_users_by_id, document["owner_id"])
+        if public_users_by_id is not None
+        else to_public_user(store.get_user_by_id(document["owner_id"]))
+    )
     return DocumentSummaryResponse(
         id=document["id"],
         title=document["title"],
@@ -139,23 +182,34 @@ def to_document_detail(
     role: str,
     store: JsonStore,
     *,
-    include_share_links: bool = False
+    include_share_links: bool = False,
+    include_ai_history: bool = False
 ) -> DocumentDetailResponse:
-    summary = to_document_summary(document, role, store)
-    shares = [to_share_response(share, store) for share in document["shares"]]
+    user_ids = {document["owner_id"]}
+    user_ids.update(share["user_id"] for share in document["shares"])
+    user_ids.update(version["created_by_user_id"] for version in document["versions"])
+    if include_ai_history:
+        user_ids.update(
+            interaction["requested_by_user_id"]
+            for interaction in document.get("ai_history", [])
+        )
+
+    public_users_by_id = build_public_user_lookup(store, user_ids)
+    summary = to_document_summary(document, role, store, public_users_by_id)
+    shares = [to_share_response(share, public_users_by_id) for share in document["shares"]]
     share_links = (
         [to_share_link_response(share_link) for share_link in document.get("share_links", [])]
         if include_share_links
         else []
     )
     versions = [
-        to_version_response(version, store)
+        to_version_response(version, public_users_by_id)
         for version in reversed(document["versions"])
     ]
     ai_history = [
-        to_ai_interaction_response(interaction, store)
+        to_ai_interaction_response(interaction, public_users_by_id)
         for interaction in document.get("ai_history", [])
-    ]
+    ] if include_ai_history else []
     return DocumentDetailResponse(
         **summary.model_dump(),
         content=document["content"],
@@ -171,13 +225,18 @@ def list_documents(
     current_user: dict = Depends(get_current_user),
     store: JsonStore = Depends(get_json_store)
 ) -> DocumentsResponse:
-    documents = []
-    for document in store.list_accessible_documents(current_user["id"]):
+    documents = store.list_accessible_documents(current_user["id"])
+    public_users_by_id = build_public_user_lookup(
+        store,
+        {document["owner_id"] for document in documents}
+    )
+    summaries = []
+    for document in documents:
         role = store.get_document_role(document, current_user["id"])
         if role is None:
             continue
-        documents.append(to_document_summary(document, role, store))
-    return DocumentsResponse(documents=documents)
+        summaries.append(to_document_summary(document, role, store, public_users_by_id))
+    return DocumentsResponse(documents=summaries)
 
 
 @router.post("", response_model=DocumentDetailResponse, status_code=status.HTTP_201_CREATED)
