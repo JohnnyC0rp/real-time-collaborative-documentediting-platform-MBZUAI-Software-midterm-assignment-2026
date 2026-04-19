@@ -1,4 +1,4 @@
-import { createBrowserRouter, Navigate, NavLink, Outlet } from "react-router-dom";
+import { createBrowserRouter, Navigate, NavLink, Outlet, useLocation } from "react-router-dom";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { useAuth } from "./context/AuthContext";
 import { DashboardPage } from "./views/DashboardPage";
@@ -8,13 +8,16 @@ import { RegisterPage } from "./views/RegisterPage";
 
 function RootLayout() {
   const auth = useAuth();
+  const location = useLocation();
+  const isDocumentLayout =
+    location.pathname.startsWith("/documents/") || location.pathname.startsWith("/shared/");
 
   async function handleLogout() {
     await auth.logout();
   }
 
   return (
-    <main className="app-shell">
+    <main className={`app-shell${isDocumentLayout ? " app-shell-wide" : ""}`}>
       <header className="hero">
         <div>
           <p className="eyebrow">Assignment 2 foundation</p>

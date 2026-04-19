@@ -338,6 +338,7 @@ export function DocumentPage() {
   const aiStreamTextRef = useRef("");
   const collaborationSessionRef = useRef<DocumentCollaborationSession | null>(null);
   const collaborationPresenceRef = useRef<CollaborationPresence[]>([]);
+  const activityTimeoutRef = useRef<number | null>(null);
   const currentTitleRef = useRef(title);
   const currentContentRef = useRef(content);
   const currentUserIdRef = useRef<string | null>(null);
@@ -359,11 +360,13 @@ export function DocumentPage() {
     editable: false,
     immediatelyRender: false,
     onUpdate({ editor: currentEditor }) {
-      setContent(currentEditor.getHTML());
+      const nextContent = currentEditor.getHTML();
+      currentContentRef.current = nextContent;
+      setContent(nextContent);
     },
     onSelectionUpdate({ editor: currentEditor }) {
       setHasTextSelection(currentEditor.state.selection.from !== currentEditor.state.selection.to);
-      collaborationSessionRef.current?.sendActivity(buildSelectionPresence(currentEditor));
+      queueActivityBroadcast(buildSelectionPresence(currentEditor));
     }
   });
 
@@ -384,6 +387,34 @@ export function DocumentPage() {
   const currentReviewText = editor ? getCurrentReviewText(editor, aiReview) : "";
   const currentUserId = guestSession?.actor.id ?? auth.user?.id ?? null;
 
+  function currentLiveContent() {
+    return editorRef.current?.getHTML() ?? currentContentRef.current;
+  }
+
+  function currentLiveSnapshot() {
+    return documentSnapshot(currentTitleRef.current, currentLiveContent());
+  }
+
+  function updateSyncBaseline(titleValue: string, contentValue: string, versionId: string | null) {
+    const syncedSnapshot = documentSnapshot(titleValue, contentValue);
+    lastSavedSnapshot.current = syncedSnapshot;
+    lastCollaborationSnapshot.current = syncedSnapshot;
+    lastSyncedVersionIdRef.current = versionId;
+    lastSyncedTitleRef.current = titleValue;
+    lastSyncedContentRef.current = contentValue;
+  }
+
+  function queueActivityBroadcast(presence?: ReturnType<typeof buildSelectionPresence>) {
+    if (activityTimeoutRef.current !== null) {
+      window.clearTimeout(activityTimeoutRef.current);
+    }
+
+    activityTimeoutRef.current = window.setTimeout(() => {
+      activityTimeoutRef.current = null;
+      collaborationSessionRef.current?.sendActivity(presence);
+    }, 120);
+  }
+
   function applyCollaborationDocumentState(nextState: CollaborationDocumentState, saveMessage: string) {
     setDocument((currentDocument) =>
       currentDocument
@@ -398,11 +429,9 @@ export function DocumentPage() {
     );
     setTitle(nextState.title);
     setContent(nextState.content);
-    lastSavedSnapshot.current = documentSnapshot(nextState.title, nextState.content);
-    lastCollaborationSnapshot.current = lastSavedSnapshot.current;
-    lastSyncedVersionIdRef.current = nextState.version_id;
-    lastSyncedTitleRef.current = nextState.title;
-    lastSyncedContentRef.current = nextState.content;
+    currentTitleRef.current = nextState.title;
+    currentContentRef.current = nextState.content;
+    updateSyncBaseline(nextState.title, nextState.content, nextState.version_id);
     setSaveStatus(saveMessage);
     const liveEditor = editorRef.current;
     if (liveEditor && liveEditor.getHTML() !== nextState.content) {
@@ -410,16 +439,30 @@ export function DocumentPage() {
     }
   }
 
+  function mergeCollaborationMetadata(nextState: CollaborationDocumentState, saveMessage: string) {
+    setDocument((currentDocument) =>
+      currentDocument
+        ? {
+            ...currentDocument,
+            title: nextState.title,
+            content: nextState.content,
+            updated_at: nextState.updated_at,
+            versions: mergeLatestVersion(currentDocument.versions, nextState.latest_version)
+          }
+        : currentDocument
+    );
+    updateSyncBaseline(nextState.title, nextState.content, nextState.version_id);
+    setSaveStatus(saveMessage);
+  }
+
   function applyDocument(nextDocument: DocumentDetail) {
     const latestVersionId = nextDocument.versions[0]?.id ?? null;
     setDocument(nextDocument);
     setTitle(nextDocument.title);
     setContent(nextDocument.content);
-    lastSavedSnapshot.current = documentSnapshot(nextDocument.title, nextDocument.content);
-    lastCollaborationSnapshot.current = lastSavedSnapshot.current;
-    lastSyncedVersionIdRef.current = latestVersionId;
-    lastSyncedTitleRef.current = nextDocument.title;
-    lastSyncedContentRef.current = nextDocument.content;
+    currentTitleRef.current = nextDocument.title;
+    currentContentRef.current = nextDocument.content;
+    updateSyncBaseline(nextDocument.title, nextDocument.content, latestVersionId);
     setSaveStatus(`Saved at ${formatTimestamp(nextDocument.updated_at)}`);
     if (editor && editor.getHTML() !== nextDocument.content) {
       editor.commands.setContent(nextDocument.content, false);
@@ -445,6 +488,14 @@ export function DocumentPage() {
     canEditRef.current = canEdit;
     editorRef.current = editor;
   }, [canEdit, content, currentUserId, editor, title]);
+
+  useEffect(() => {
+    return () => {
+      if (activityTimeoutRef.current !== null) {
+        window.clearTimeout(activityTimeoutRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     collaborationPresenceRef.current = collaborationPresence;
@@ -544,6 +595,17 @@ export function DocumentPage() {
 
     const session = new DocumentCollaborationSession(document.id, collaborationAuth, {
       onAck: (event) => {
+        const ackSnapshot = documentSnapshot(event.document.title, event.document.content);
+        if (currentLiveSnapshot() !== ackSnapshot) {
+          mergeCollaborationMetadata(
+            event.document,
+            event.document.merge_strategy === "char-merge"
+              ? "Merged server update saved. Keeping newer local draft in the editor."
+              : "Live sync saved. Keeping newer local draft in the editor."
+          );
+          return;
+        }
+
         applyCollaborationDocumentState(
           event.document,
           event.document.merge_strategy === "char-merge"
@@ -666,7 +728,11 @@ export function DocumentPage() {
       return;
     }
 
-    const snapshot = documentSnapshot(title, content);
+    if (collaborationState === "connected" && collaborationSessionRef.current) {
+      return;
+    }
+
+    const snapshot = currentLiveSnapshot();
 
     if (snapshot === lastSavedSnapshot.current) {
       return;
@@ -681,29 +747,29 @@ export function DocumentPage() {
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [canEdit, content, document?.id, title]);
+  }, [canEdit, collaborationState, content, document?.id, title]);
 
   useEffect(() => {
     if (!document || !canEdit || !collaborationSessionRef.current) {
       return;
     }
 
-    const snapshot = documentSnapshot(title, content);
+    const nextTitle = currentTitleRef.current.trim();
+    const nextContent = currentLiveContent();
+    const snapshot = documentSnapshot(nextTitle, nextContent);
     if (snapshot === lastCollaborationSnapshot.current) {
       return;
     }
 
     const timeoutId = window.setTimeout(() => {
       collaborationSessionRef.current?.sendUpdate({
-        title: title.trim(),
-        content,
+        title: nextTitle,
+        content: nextContent,
         base_version_id: lastSyncedVersionIdRef.current,
         base_title: lastSyncedTitleRef.current,
         base_content: lastSyncedContentRef.current
       });
-      collaborationSessionRef.current?.sendActivity(
-        editorRef.current ? buildSelectionPresence(editorRef.current) : undefined
-      );
+      queueActivityBroadcast(editorRef.current ? buildSelectionPresence(editorRef.current) : undefined);
       setSaveStatus(
         collaborationState === "connected"
           ? "Live syncing..."
@@ -736,20 +802,22 @@ export function DocumentPage() {
       return null;
     }
 
-    const normalizedTitle = title.trim();
+    const normalizedTitle = currentTitleRef.current.trim();
     if (!normalizedTitle) {
       setSaveStatus("Title is required before saving");
       return null;
     }
 
     setSaveStatus(saveSource === "autosave" ? "Autosaving..." : "Saving...");
+    const requestedContent = contentOverride ?? currentLiveContent();
+    const requestSnapshot = documentSnapshot(normalizedTitle, requestedContent);
 
     try {
       const nextDocument =
         guestSession && shareToken && guestKey
           ? await updateGuestDocument(shareToken, document.id, guestKey, {
               title: normalizedTitle,
-              content: contentOverride ?? content,
+              content: requestedContent,
               save_source: saveSource,
               base_version_id: lastSyncedVersionIdRef.current,
               base_title: lastSyncedTitleRef.current,
@@ -757,13 +825,24 @@ export function DocumentPage() {
             })
           : await updateDocument(document.id, {
               title: normalizedTitle,
-              content: contentOverride ?? content,
+              content: requestedContent,
               save_source: saveSource,
               base_version_id: lastSyncedVersionIdRef.current,
               base_title: lastSyncedTitleRef.current,
               base_content: lastSyncedContentRef.current
             });
       setErrorMessage("");
+      if (currentLiveSnapshot() !== requestSnapshot) {
+        // Older responses do not get to teleport the cursor backward. The newer draft wins.
+        setDocument(nextDocument);
+        updateSyncBaseline(
+          nextDocument.title,
+          nextDocument.content,
+          nextDocument.versions[0]?.id ?? null
+        );
+        setSaveStatus("Saved the previous draft. Keeping newer local edits in the editor.");
+        return nextDocument;
+      }
       applyDocument(nextDocument);
       return nextDocument;
     } catch (error) {
@@ -1198,7 +1277,7 @@ export function DocumentPage() {
 
       <section className="panel document-main-column">
         <div className="document-header">
-          <div>
+          <div className="document-title-block">
             <div className="document-meta-line">
               <RoleBadge role={document.role} />
               <span>Owner: {document.owner.username}</span>
@@ -1209,7 +1288,10 @@ export function DocumentPage() {
               className="document-title-input"
               disabled={!canEdit}
               value={title}
-              onChange={(event) => setTitle(event.target.value)}
+              onChange={(event) => {
+                currentTitleRef.current = event.target.value;
+                setTitle(event.target.value);
+              }}
             />
           </div>
 
